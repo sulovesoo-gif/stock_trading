@@ -1,0 +1,115 @@
+-- [Group A] 누적 마스터/시세 (Historical Archive)
+CREATE TABLE IF NOT EXISTS stock_info (
+    stock_code VARCHAR(10) PRIMARY KEY COMMENT '종목코드(6자리)',
+    stock_name VARCHAR(50) NOT NULL DEFAULT 'Unknown' COMMENT '종목명',
+    theme VARCHAR(512) COMMENT '네이버 다중 테마(쉼표 구분)',
+    sector VARCHAR(50) COMMENT '네이버 섹터',
+    market_cap BIGINT COMMENT '시가총액',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '감시 활성화 여부',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='종목 마스터 누적판 (매일 업데이트)';
+
+CREATE TABLE IF NOT EXISTS market_ohlcv (
+    id BIGINT PRIMARY KEY AUTO_RANDOM,
+    stock_code VARCHAR(10) NOT NULL,
+    datetime DATETIME NOT NULL COMMENT '봉 시작 시간',
+    open DECIMAL(10, 2), high DECIMAL(10, 2), low DECIMAL(10, 2), close DECIMAL(10, 2),
+    volume INT COMMENT '거래량',
+    amount BIGINT COMMENT '거래대금',
+    INDEX idx_stock_time (stock_code, datetime)
+) COMMENT='분봉/일봉 시세 아카이브 (영구 누적)';
+
+-- [Group B] 실시간 상태/지표 (Live Snapshot)
+CREATE TABLE IF NOT EXISTS live_indicators (
+    stock_code VARCHAR(10) PRIMARY KEY,
+    datetime DATETIME COMMENT '지표 계산 기준 시간',
+    lrl DECIMAL(10, 2), lrs DECIMAL(10, 2), rsi DECIMAL(5, 2),
+    bb_upper DECIMAL(10, 2), bb_lower DECIMAL(10, 2),
+    r_square DECIMAL(5, 4), ma_short DECIMAL(10, 2), ma_long DECIMAL(10, 2),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='전략 판단용 실시간 지표 스냅샷';
+
+CREATE TABLE IF NOT EXISTS target_candidates (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    stock_code VARCHAR(10) NOT NULL,
+    reason VARCHAR(100) COMMENT '선정 사유 (거래대금 상위 등)',
+    selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='오늘의 수집 및 감시 대상 종목';
+
+-- [Group C] 매매 및 검증 이력 (Trading Audit)
+CREATE TABLE IF NOT EXISTS signal_history (
+    id BIGINT PRIMARY KEY AUTO_RANDOM,
+    stock_code VARCHAR(10) NOT NULL,
+    signal_type ENUM('BUY', 'SELL') NOT NULL,
+    signal_price DECIMAL(10, 2),
+    reason TEXT COMMENT '신호 발생 근거 (지표 조합)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='매수/매도 신호 발생 기록 (검증용)';
+
+CREATE TABLE IF NOT EXISTS trade_log (
+    order_id VARCHAR(50) PRIMARY KEY COMMENT '증권사 주문번호',
+    stock_code VARCHAR(10) NOT NULL,
+    side ENUM('BUY', 'SELL') NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    qty INT NOT NULL,
+    pnl_rate DECIMAL(5, 2) COMMENT '실현 수익률',
+    trade_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='실제 체결 매매 일지 (수익률 추적)';
+
+
+
+
+
+
+
+
+===============================================================
+-- 1. 종목 마스터 (누적/유지)
+CREATE TABLE IF NOT EXISTS stocks_master (
+    stock_code VARCHAR(10) PRIMARY KEY COMMENT '종목코드(6자리)',
+    stock_name VARCHAR(50) NOT NULL COMMENT '종목명',
+    sector VARCHAR(50) COMMENT '네이버 크롤링 섹터',
+    theme VARCHAR(255) COMMENT '네이버 크롤링 테마',
+    market_cap BIGINT COMMENT '시가총액',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '현재 감시 여부',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='종목 기본 정보 및 테마 분류';
+
+-- 2. 시세 데이터 (누적/아카이브)
+CREATE TABLE IF NOT EXISTS market_ohlcv (
+    id BIGINT PRIMARY KEY AUTO_RANDOM,
+    stock_code VARCHAR(10) NOT NULL,
+    datetime DATETIME NOT NULL COMMENT '봉 시작 시간',
+    open DECIMAL(10, 2),
+    high DECIMAL(10, 2),
+    low DECIMAL(10, 2),
+    close DECIMAL(10, 2),
+    volume INT COMMENT '거래량',
+    amount BIGINT COMMENT '거래대금',
+    INDEX idx_stock_time (stock_code, datetime)
+) COMMENT='1분봉 시세 데이터 누적 저장소';
+
+-- 3. 실시간 기술적 지표 (최신 스냅샷)
+CREATE TABLE IF NOT EXISTS live_indicators (
+    stock_code VARCHAR(10) PRIMARY KEY,
+    datetime DATETIME,
+    rsi DECIMAL(5, 2),
+    lrl DECIMAL(10, 2),
+    lrs DECIMAL(10, 2),
+    bb_upper DECIMAL(10, 2),
+    bb_lower DECIMAL(10, 2),
+    r_square DECIMAL(5, 4),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='전략 판단용 실시간 지표 계산값';
+
+-- 4. 매매 이력 (이력 보존)
+CREATE TABLE IF NOT EXISTS trade_log (
+    order_id VARCHAR(50) PRIMARY KEY COMMENT '증권사 주문번호',
+    stock_code VARCHAR(10) NOT NULL,
+    side ENUM('BUY', 'SELL') NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    qty INT NOT NULL,
+    pnl_rate DECIMAL(5, 2) COMMENT '실현수익률',
+    trade_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='매수/매도 실행 결과 이력';

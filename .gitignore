@@ -1,0 +1,13 @@
+# 설정 및 비밀 정보
+.env
+*.pyc
+__pycache__/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# IDE 설정
+.vscode/
+.idea/

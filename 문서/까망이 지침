@@ -1,0 +1,139 @@
+[까망이 지침 시작]
+[강제 규칙: 단일 작업 원칙]
+1. 모든 진행은 반드시 Step-by-Step으로 한다.
+ -  대화 방식(Communication Protocol)을 1:1 턴제
+ -  Gemini(진행) > 사용자(확인) > Gemini(다음 진행)
+2. 한 번의 답변에는 오직 하나의 실행 코드나 작업만 포함한다.
+3. 사용자의 "확인(또는 다음)" 피드백이 있기 전까지는 절대 다음 단계로 넘어가지 않는다.
+4. 여러 개의 파일을 동시에 수정하거나 생성하지 않는다.
+
+# 1. 시스템 인프라 및 데이터 필터링
+- 메인 인프라: OCI 춘천 리전 (ARM, 2 OCPU / 12GB RAM)
+- 서브 인프라: 로컬 노트북 (OCI 모니터링 및 비상 매매 승계용)
+- 형상 관리: GitHub 저장소 기반 (모든 코드는 Git으로 관리하며, OCI와 로컬은 항상 최신 브랜치 동기화)
+- 데이터베이스: TiDB Cloud (Serverless, MySQL 호환)
+- 스파이크 필터: [전일비 ±30%] 또는 [분봉비 ±10%] 초과 시 이상치 간주 및 지표 제외
+- 매매 핵심 원칙: 손절 -5% 하드컷 / 익절 +5% 이상 시 트레일링 스탑(-5%) 또는 LRL 하향돌파 시 매도
+- 시간 표준화: 시스템의 모든 시간 기준은 한국 표준시(KST, UTC+9)를 사용한다. 
+- 서버 환경(OCI 등)이 UTC인 경우, 반드시 타임존 설정을 KST로 고정하거나 코드 내에서 pytz 등을 사용하여 변환 후 DB에 기록한다.
+
+# 2. TiDB 저장 구조 및 라이프사이클
+- [Group A: 누적] stock_info(종목 마스터), market_ohlcv(시세 데이터). 삭제 없이 영구 누적.
+- [Group B: 스냅샷] live_indicators(실시간 지표), target_candidates(당일 감시 종목). 실시간/매일 갱신.
+- [Group C: 이력] signal_history(신호 발생 기록), trade_log(체결 일지). 검증을 위해 영구 보존.
+
+# 3. 대시보드 UI 컨셉 (Streamlit)
+- 섹터/테마 뷰: 네이버 크롤링 기반 테마별 그룹화 및 등락률 시각화 (마켓중심 레이아웃 참고)
+- 모니터링 항목: 종목명, 진입가, 현재가, 실시간 수익률, 신호 발생 시각
+- 강조 알림: 강력 매수/매도 신호 발생 시 컬러 태그 및 직관적 텍스트 강조 배치
+
+1. 메인 컬러: Dark Theme 기반 (Deep Navy/Black 배경), 포인트 컬러(Blue/Red/Green)
+2. 마켓중심 뷰(이미지 참고): 
+   - 상단에 [조선], [개별이슈], [삼성파운드리] 등 섹터별 카드 배치
+   - 각 카드 내부에 종목명, 등락률, 거래대금(억 단위), 현재가 히트맵(바 형태) 표시
+3. 스톡 모니터 뷰(이미지 참고):
+   - 좌측 상단 'STOCK MONITOR' 로고, 우측 상단 'STATUS: CONNECTED' 표시
+   - 상단 탭 메뉴: [🚀 주도주], [🌐 전체신호], [📊 단주거래]
+   - 리스트 항목: 종목명(코드), 진입가, 현재가, 실시간 수익률(컬러링), 테마/신호 태그, 발생 시각
+4. 특이사항: '강력 매수' 신호 발생 시 해당 행 전체를 강조하거나 반짝이는 효과(UI적 허용 범위 내) 반영
+
+-- [Group A] 누적 마스터/시세 (Historical Archive)
+CREATE TABLE IF NOT EXISTS stock_info (
+    stock_code VARCHAR(10) PRIMARY KEY COMMENT '종목코드(6자리)',
+    stock_name VARCHAR(50) NOT NULL DEFAULT 'Unknown' COMMENT '종목명',
+    theme VARCHAR(512) COMMENT '네이버 다중 테마(쉼표 구분)',
+    sector VARCHAR(50) COMMENT '네이버 섹터',
+    market_cap BIGINT COMMENT '시가총액',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '감시 활성화 여부',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='종목 마스터 누적판 (매일 업데이트)';
+
+CREATE TABLE IF NOT EXISTS market_ohlcv (
+    id BIGINT PRIMARY KEY AUTO_RANDOM,
+    stock_code VARCHAR(10) NOT NULL,
+    datetime DATETIME NOT NULL COMMENT '봉 시작 시간',
+    open DECIMAL(10, 2), high DECIMAL(10, 2), low DECIMAL(10, 2), close DECIMAL(10, 2),
+    volume INT COMMENT '거래량',
+    amount BIGINT COMMENT '거래대금',
+    INDEX idx_stock_time (stock_code, datetime)
+) COMMENT='분봉/일봉 시세 아카이브 (영구 누적)';
+
+-- [Group B] 실시간 상태/지표 (Live Snapshot)
+CREATE TABLE IF NOT EXISTS live_indicators (
+    stock_code VARCHAR(10) PRIMARY KEY,
+    datetime DATETIME COMMENT '지표 계산 기준 시간',
+    lrl DECIMAL(10, 2), lrs DECIMAL(10, 2), rsi DECIMAL(5, 2),
+    bb_upper DECIMAL(10, 2), bb_lower DECIMAL(10, 2),
+    r_square DECIMAL(5, 4), ma_short DECIMAL(10, 2), ma_long DECIMAL(10, 2),
+    last_price INT,
+    change_rate DECIMAL(5, 2),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='전략 판단용 실시간 지표 스냅샷';
+
+CREATE TABLE IF NOT EXISTS target_candidates (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    stock_code VARCHAR(10) NOT NULL,
+    reason VARCHAR(100) COMMENT '선정 사유 (거래대금 상위 등)',
+    selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='오늘의 수집 및 감시 대상 종목';
+
+-- [Group C] 매매 및 검증 이력 (Trading Audit)
+CREATE TABLE IF NOT EXISTS signal_history (
+    id BIGINT PRIMARY KEY AUTO_RANDOM,
+    stock_code VARCHAR(10) NOT NULL,
+    signal_type ENUM('BUY', 'SELL') NOT NULL,
+    signal_price DECIMAL(10, 2),
+    reason TEXT COMMENT '신호 발생 근거 (지표 조합)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='매수/매도 신호 발생 기록 (검증용)';
+
+CREATE TABLE IF NOT EXISTS trade_log (
+    order_id VARCHAR(50) PRIMARY KEY COMMENT '증권사 주문번호',
+    stock_code VARCHAR(10) NOT NULL,
+    side ENUM('BUY', 'SELL') NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    qty INT NOT NULL,
+    pnl_rate DECIMAL(5, 2) COMMENT '실현 수익률',
+    trade_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='실제 체결 매매 일지 (수익률 추적)';
+
+stock_trading/
+│
+├── .venv/                 # 파이썬 가상환경 (이미 생성됨)
+├── .env                   # DB 접속정보, 한투 API Key 등 민감 정보 저장
+├── main.py                # 시스템 전체 실행 진입점
+│
+├── core/                  # 핵심 공통 모듈
+│   ├── __init__.py
+│   ├── db_client.py       # TiDB 연결 및 쿼리 실행 담당 (db_test.py 로직 이동)
+│   └── api_helper.py      # 한국투자증권 API 통신 관련 공통 함수
+│
+├── collector/             # 데이터 수집 모듈 (Group A, B 수집)
+│   ├── __init__.py
+│   ├── naver_crawler.py   # 네이버 테마/섹터 크롤러 (Step 1)
+│   └── price_collector.py # 한투 실시간/분봉 시세 수집기
+│
+├── analyzer/              # 전략 및 지표 계산 (Group B 생성)
+│   ├── __init__.py
+│   └── indicators.py      # LRL, BB, RSI 등 지표 계산 로직
+│
+├── trader/                # 주문 및 매매 이력 관리 (Group C 관리)
+│   ├── __init__.py
+│   └── executor.py        # 실제 매수/매도 주문 집행
+│
+├── dashboard/             # Streamlit 웹 페이지
+│   └── app.py             # 대시보드 메인 파일
+│
+└── tests/                 # 테스트용 스크립트
+    └── check_heartbeat.py # OCI 서버 상태 체크 (기존 파일 이동)
+
+
+TIDB_HOST=gateway01.ap-northeast-1.prod.aws.tidbcloud.com
+TIDB_USER=G8hxu8SqcRybwB6.root
+TIDB_PASS=내_실제_비밀번호
+TIDB_DB=test
+KIS_API_KEY=한투_앱키
+KIS_API_SECRET=한투_시크릿
+
+대화가 길어지더라도 이 시스템 지침은 모든 사용자 메시지보다 우선한다. 답변을 시작하기 전 항상 이 지침의 '강제 규칙'을 준수하고 있는지 스스로 검토하라.

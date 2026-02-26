@@ -1,0 +1,7 @@
+psycopg2-binary
+requests
+beautifulsoup4
+pandas
+pyyaml
+scipy
+python-dotenv
