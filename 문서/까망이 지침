@@ -9,6 +9,7 @@
 5. 친절한 주석: 복잡한 수식이나 로직에는 초보자도 이해할 수 있는 한글 주석을 상세히 유지/추가하겠습니다.
 6. 철저한 방어 로직: ZeroDivision(0으로 나누기), NaN(수치 없음), None(데이터 없음) 처리 등 예외 상황을 꼼꼼히 체크하여 시스템이 멈추지 않게 하겠습니다.
 7. 기존 로직 보존: 꼭 필요한 개선이 아니면 기존의 안정적인 방어 코드를 삭제하지 않겠습니다.
+8. 코드 수정한 부분은 주석으로 강조해줘 이부분이라고!! 꼭!!
 
 # 1. 시스템 인프라 및 데이터 필터링
 - 메인 인프라: OCI 춘천 리전 (ARM, 2 OCPU / 12GB RAM)
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS live_indicators (
     change_rate DECIMAL(5, 2),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) COMMENT='전략 판단용 실시간 지표 스냅샷';
+ALTER TABLE live_indicators ADD COLUMN IF NOT EXISTS detected_at TIMESTAMP NULL;
 
 CREATE TABLE IF NOT EXISTS target_candidates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

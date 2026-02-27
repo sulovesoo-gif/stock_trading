@@ -1,16 +1,19 @@
 import time
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from core.api_helper import kis
 from core.db_client import db
+
+KST = ZoneInfo("Asia/Seoul")
 
 def collect_daily_ohlcv_final():
     print("📅 [고속 모드] 일봉 데이터 수집 및 업데이트 시작...")
     kis.auth()
 
     # 조회 날짜 설정 (시작일: 100일 전, 종료일: 오늘)
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=150)).strftime("%Y%m%d")
+    end_date = datetime.now(KST).strftime("%Y%m%d")
+    start_date = (datetime.now(KST) - timedelta(days=150)).strftime("%Y%m%d")
 
     # target_candidates에서 수집 대상 가져오기
     targets = db.execute_query("SELECT stock_code FROM target_candidates")
@@ -24,7 +27,7 @@ def collect_daily_ohlcv_final():
         
         # --- [추가된 고속 스킵 로직] ---
         # 해당 종목의 가장 최근 저장 날짜 확인
-        last_stored = db.execute_query(
+        last_stored = db.execute_select_query(
             "SELECT MAX(datetime) as dt FROM market_ohlcv WHERE stock_code=%s", 
             (code,)
         )
@@ -32,7 +35,7 @@ def collect_daily_ohlcv_final():
         if last_stored and last_stored[0]['dt']:
             last_dt = last_stored[0]['dt']
             # 마지막 데이터가 오늘 또는 어제(휴일 고려)라면 수집 건너뜀
-            if last_dt.date() >= (datetime.now() - timedelta(days=1)).date():
+            if last_dt.date() >= (datetime.now(KST) - timedelta(days=1)).date():
                 print(f"⏩ {code}: 이미 최신 데이터가 존재합니다. (Pass)")
                 continue
         # ----------------------------
