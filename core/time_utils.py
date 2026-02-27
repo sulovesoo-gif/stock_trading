@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
-
+datetime.now(KST)
 def utc_now() -> datetime:
     """DB 저장 및 시스템 내부 계산용 (UTC)"""
     return datetime.now(timezone.utc)

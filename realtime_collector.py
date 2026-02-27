@@ -62,7 +62,9 @@ def check_strategy_and_save(code, name, price, change_rate, ind):
             change_rate=%s, -- API에서 받은 전일비 등락률 직접 반영
             rsi=%s, lrl=%s, r_square=%s, 
             bb_upper=%s, bb_lower=%s, ma_short=%s, ma_long=%s, 
-            updated_at=NOW()
+            updated_at=NOW(),
+            # 🚀 [단순화 로직]  
+            detected_at = IF(DATE(detected_at) != DATE(NOW()) OR detected_at IS NULL, NOW(), detected_at)
         WHERE stock_code=%s
     """
     db.execute_query(update_sql, (price, change_rate, rsi, lrl, r_sq, bb_u, bb_l, ma_s, ma_l, code))
@@ -162,6 +164,8 @@ def collect_realtime_data():
     kis.auth()
 
     while True:
+        print("🚀 시스템 시작: 타겟 종목을 먼저 선정합니다...")
+        select_target_stocks()
         try:
             if not is_market_open():
                 print(f"💤 장외 대기 중... ({datetime.now(KST).strftime('%H:%M:%S')})")
