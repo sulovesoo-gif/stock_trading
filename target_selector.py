@@ -54,12 +54,32 @@ def select_target_stocks():
                     rank_list = res.json().get('output', [])
                     for item in rank_list:
                         code = item['mksc_shrn_iscd']
-                        # 사유 누적
-                        if code in all_targets:
-                            if c_name not in all_targets[code]:
-                                all_targets[code] += f", {c_name}"
+                        name = item['hts_kor_isnm']
+                        print(f"✅ {name} 등록되었습니다.")
+                        # 사유 생성 (예: 코스피 거래대금)
+                        # current_reason = f"{s_name} {c_name}"
+                        # if code in all_targets:
+                        #     # [수정 부분!!] 이미 존재하는 종목이면 사유만 누적 (중복 체크)
+                        #     if current_reason not in all_targets[code]['reason']:
+                        #         all_targets[code]['reason'] += f", {current_reason}"
+                        # else:
+                        #     # [수정 부분!!] 처음 발견된 종목이면 이름과 사유를 딕셔너리로 저장
+                        #     all_targets[code] = {
+                        #         'name': name,
+                        #         'reason': current_reason
+                        #     }
+                            
+                        if code not in all_targets:
+                            all_targets[code] = {'name': name, 'reason': c_name}
                         else:
-                            all_targets[code] = f"{s_name} {c_name}"
+                            if c_name not in all_targets[code]['reason']:
+                                all_targets[code]['reason'] += f", {c_name}"
+                        # 사유 누적
+                        # if code in all_targets:
+                        #     if c_name not in all_targets[code]:
+                        #         all_targets[code] += f", {c_name}"
+                        # else:
+                        #     all_targets[code] = f"{s_name} {c_name}"
                 time.sleep(0.2)
                     
             except Exception as e:
@@ -78,13 +98,18 @@ def select_target_stocks():
             
             # 데이터 준비
             insert_data = [(code, reason) for code, reason in all_targets.items()]
+            insert_data = [(code, info['name'], info['reason']) for code, info in all_targets.items()]
             
             # selected_at 컬럼을 포함한 쿼리
-            sql = "INSERT INTO target_candidates (stock_code, reason, selected_at) VALUES (%s, %s, NOW())"
+            # sql = "INSERT INTO target_candidates (stock_code, reason, selected_at) VALUES (%s, %s, NOW())"
+            sql = "INSERT INTO target_candidates (stock_code, stock_name, reason, selected_at) VALUES (%s, %s, %s, NOW())"
             cursor.executemany(sql, insert_data)
             
             # live_indicators 초기 레코드 생성 (중복 무시)
-            for code, _ in insert_data:
+            # for code, _ in insert_data:
+            #     cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, updated_at) VALUES (%s, NOW())", (code,))
+
+            for code, info in all_targets.items():
                 cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, updated_at) VALUES (%s, NOW())", (code,))
             
             conn.commit()

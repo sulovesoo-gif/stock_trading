@@ -18,7 +18,7 @@
 - 데이터베이스: TiDB Cloud (Serverless, MySQL 호환)
 - 스파이크 필터: [전일비 ±30%] 또는 [분봉비 ±10%] 초과 시 이상치 간주 및 지표 제외
 - 매매 핵심 원칙: 손절 -5% 하드컷 / 익절 +5% 이상 시 트레일링 스탑(-5%) 또는 LRL 하향돌파 시 매도
-- 시간 표준화: 시스템의 모든 시간 기준은 한국 표준시(KST, UTC+9)를 사용한다. 
+- 시간 표준화: DB입력은 UTC로 출력은 KST로 한다.
 - 서버 환경(OCI 등)이 UTC인 경우, 반드시 타임존 설정을 KST로 고정하거나 코드 내에서 pytz 등을 사용하여 변환 후 DB에 기록한다.
 
 # 2. TiDB 저장 구조 및 라이프사이클
@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS live_indicators (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) COMMENT='전략 판단용 실시간 지표 스냅샷';
 ALTER TABLE live_indicators ADD COLUMN IF NOT EXISTS detected_at TIMESTAMP NULL;
+ALTER TABLE live_indicators 
+ADD COLUMN foreign_rate DECIMAL(5, 2) DEFAULT 0.00 COMMENT '외국인 보유 비중 (%)',
+ADD COLUMN foreign_net_5d INT DEFAULT 0 COMMENT '외국인 5일 누적 순매수 (주)',
+ADD COLUMN institution_net_5d INT DEFAULT 0 COMMENT '기관 5일 누적 순매수 (주)',
+ADD COLUMN volume_profile JSON DEFAULT NULL COMMENT '가격대별 매물대 데이터 (JSON)';
 
 CREATE TABLE IF NOT EXISTS target_candidates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -82,6 +87,7 @@ CREATE TABLE IF NOT EXISTS target_candidates (
     selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) COMMENT='오늘의 수집 및 감시 대상 종목';
+ALTER TABLE target_candidates ADD COLUMN stock_name VARCHAR(100) AFTER stock_code;
 
 -- [Group C] 매매 및 검증 이력 (Trading Audit)
 CREATE TABLE IF NOT EXISTS signal_history (

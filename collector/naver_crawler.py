@@ -3,6 +3,25 @@ from bs4 import BeautifulSoup
 import time
 from core.db_client import db
 
+# [추가 부분!!] 업종(Sector) 정보를 먼저 수집하는 함수
+def get_all_sectors():
+    """네이버 금융 업종별 시세 페이지에서 업종명과 해당 종목 리스트 수집"""
+    sectors = []
+    url = "https://finance.naver.com/sise/sise_group.naver?type=group"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    
+    # 업종 링크 추출
+    sector_elements = soup.select('td a')
+    for el in sector_elements:
+        if '/sise/sise_group_detail.naver?type=group' in el['href']:
+            sectors.append({
+                'name': el.text,
+                'link': 'https://finance.naver.com' + el['href']
+            })
+    return sectors
+
 def get_all_themes():
     """네이버 금융 테마 전체 리스트와 URL 수집"""
     themes = []
@@ -41,10 +60,28 @@ def get_stocks_in_theme(theme_link):
     return stocks
 
 def sync_naver_themes():
-    """최종 실행 함수: 테마 정보를 긁어서 stock_info에 업데이트"""
-    print("🚀 네이버 테마 동기화 시작...")
-    all_themes = get_all_themes()
+    """최종 실행 함수: 업종(Sector)과 테마(Theme) 정보를 모두 업데이트"""
+    print("🚀 네이버 업종/테마 동기화 시작...")
     
+    # 1. 업종(Sector) 동기화 먼저 진행
+    all_sectors = get_all_sectors()
+    for sector in all_sectors:
+        print(f"🏢 업종 분석 중: {sector['name']}")
+        stock_codes = get_stocks_in_theme(sector['link']) # 종목 추출 로직은 동일하게 재사용
+        for code in stock_codes:
+            # [수정 부분!!] sector 컬럼 업데이트 (중복 방지 및 누적)
+            sql = """
+            INSERT INTO stock_info (stock_code, stock_name, sector)
+            VALUES (%s, 'Unknown', %s)
+            ON DUPLICATE KEY UPDATE 
+            sector = VALUES(sector), -- 업종은 보통 하나이므로 덮어쓰기
+            updated_at = NOW();
+            """
+            db.execute_query(sql, (code, sector['name']))
+        time.sleep(0.1)
+    
+    # 2. 테마(Theme) 동기화 (기존 로직 유지)
+    all_themes = get_all_themes()
     for theme in all_themes:
         print(f"📂 테마 분석 중: {theme['name']}")
         stock_codes = get_stocks_in_theme(theme['link'])

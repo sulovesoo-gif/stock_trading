@@ -125,4 +125,121 @@ class KISApiHelper:
             print(f"❌ 복수 종목 조회 API 통신 에러: {e}")
             return []
 
+    def get_investor_trade_data(self, code):
+        """
+        [수정] 종목별 외국인/기관 순매수 수량(5일 누적) 수집
+        참고: get_multi_prices의 인증 및 에러 처리 구조 적용
+        """
+        self.auth() # 토큰 유효성 체크
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily"
+        today_str = datetime.now().strftime("%Y%m%d")
+        
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "authorization": f"Bearer {self.access_token}",
+            "appkey": self.app_key,
+            "appsecret": self.app_secret,
+            "tr_id": "FHPTJ04160001",
+            "custtype": "P"
+        }
+
+        # FID_ORG_ADJ_PRC와 FID_ETC_CLS_CODE는 공백보다 '0'과 '00'이 안정적입니다.
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": code,
+            "FID_INPUT_DATE_1": today_str,
+            "FID_ORG_ADJ_PRC": "0",
+            "FID_ETC_CLS_CODE": "00"
+        }
+
+        try:
+            res = requests.get(url, headers=headers, params=params)
+            
+            if res.status_code == 200 and res.text:
+                data = res.json()
+                output2 = data.get('output2', [])
+                
+                if not output2:
+                    print(f"⚠️ [수급] {code} 응답 성공했으나 데이터(output2)가 비어있음")
+                    return None
+                    
+                # 최근 5일치 순매수량 합산
+                recent_5 = output2[:5]
+                f_net = sum(int(day.get('frgn_ntby_qty', 0)) for day in recent_5)
+                i_net = sum(int(day.get('orgn_ntby_qty', 0)) for day in recent_5)
+                
+                print(f"📡 [API] {code} 수급 수신 완료 (외인:{f_net}/기관:{i_net})")
+                return {
+                    'foreign_net_5d': f_net,
+                    'institution_net_5d': i_net
+                }
+            else:
+                print(f"⚠️ [수급] API 서버 응답 비정상 (상태코드: {res.status_code})")
+                return None
+        except Exception as e:
+            print(f"❌ [수급] API 통신 에러 ({code}): {e}")
+            return None
+
+    def get_price_volume_profile(self, code):
+        """
+        [최종 수정] 국내주식 매물대/거래비중 수집 (TR: FHPST01130000)
+        명세서의 필수 파라미터(FID_COND_SCR_DIV_CODE, FID_INPUT_HOUR_1) 반영
+        """
+        self.auth()
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/pbar-tratio"
+        
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "authorization": f"Bearer {self.access_token}",
+            "appkey": self.app_key,
+            "appsecret": self.app_secret,
+            "tr_id": "FHPST01130000",
+            "custtype": "P"
+        }
+        
+        # 명세서 기준 필수 파라미터 교정
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": code,
+            "FID_COND_SCR_DIV_CODE": "20113", # 명세서 필수: 조건화면분류코드
+            "FID_INPUT_HOUR_1": ""             # 명세서 필수: 입력시간1 (공백 전달)
+        }
+
+        try:
+            res = requests.get(url, headers=headers, params=params)
+            
+            if res.status_code == 200 and res.text:
+                data = res.json()
+
+                # output = data.get('output2') if data.get('output2') else data.get('output', [])
+                output = data.get('output2', [])
+                
+                if not output:
+                    print(f"⚠️ [매물대] {code} 응답 성공했으나 데이터가 비어있음 (msg1: {data.get('msg1')})")
+                    return None
+                
+                # 비중 높은 상위 5개 추출 (acml_vol_rlim: 누적거래량비중)
+                try:
+                    # 1. 먼저 '비중(acml_vol_rlim)'이 높은 순으로 정렬해서 상위 5개를 추출합니다.
+                    # (시장에서 가장 의미 있는 5대 매물대 확보)
+                    sorted_by_vol = sorted(output, key=lambda x: float(x.get('acml_vol_rlim', 0)), reverse=True)
+                    top_5 = sorted_by_vol[:5]
+                    
+                    # 2. [핵심] 추출된 5개를 다시 '가격(stck_prpr)' 기준으로 내림차순 정렬합니다.
+                    # 그래야 대시보드에서 고가가 위로, 저가가 아래로 예쁘게 정렬됩니다.
+                    final_profile = sorted(top_5, key=lambda x: float(x.get('stck_prpr', 0)), reverse=True)
+                    
+                    if final_profile:
+                        print(f"🧱 [API] {code} 주요 매물대 5개 가격순 정렬 완료")
+                    return final_profile
+                except (ValueError, TypeError) as e:
+                    print(f"❌ [매물대] 데이터 파싱 에러: {e}")
+                    return None
+            else:
+                print(f"⚠️ [매물대] API 서버 응답 비정상 (상태코드: {res.status_code})")
+                return None
+        except Exception as e:
+            print(f"❌ [매물대] API 통신 에러 ({code}): {e}")
+            return None
+        
 kis = KISApiHelper()

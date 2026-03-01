@@ -1,4 +1,5 @@
 import time
+import json
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -26,16 +27,23 @@ def is_market_open():
     end_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
     return start_time <= now <= end_time
 
-def check_strategy_and_save(code, name, price, change_rate, ind):
+def check_strategy_and_save(code, name, price, change_rate, ind, investor=None, profile=None):
     """
     계산된 지표를 바탕으로 전략을 판단하고, 
     live_indicators 업데이트 및 signal_history에 기록합니다.
     """
-    if not ind: return
+
+    # 1. 수급 및 매물대 데이터 가공 (ind와 상관없이 먼저 수행)
+    f_net = investor.get('foreign_net_5d', 0) if investor else 0
+    i_net = investor.get('institution_net_5d', 0) if investor else 0
+    v_profile = json.dumps(profile) if profile else None
+
+    # [DB_TRACE]
+    print(f"📝 [DB_TRACE] {name}({code}) 업데이트 시도 -> 등락: {change_rate}, 수급(F:{f_net})")
 
     # [데이터 추가 A] market_ohlcv 당일 시세 업데이트 (대시보드 히스토리용)
     # 오늘 데이터가 없으면 INSERT, 있으면 최신가로 UPDATE (고가/저가 갱신 포함)
-    history_sql = """
+    insert_sql = """
         INSERT INTO market_ohlcv (stock_code, datetime, open, high, low, close, volume)
         VALUES (%s, CURDATE(), %s, %s, %s, %s, 0)
         ON DUPLICATE KEY UPDATE 
@@ -44,32 +52,35 @@ def check_strategy_and_save(code, name, price, change_rate, ind):
             low = IF(VALUES(close) < low, VALUES(close), low),
             datetime = NOW() -- [수정] 마지막 업데이트 시간 기록
     """
-    db.execute_query(history_sql, (code, price, price, price, price))
+    db.execute_query(insert_sql, (code, price, price, price, price))
 
-    # 1. 지표 값 추출
-    rsi = ind.get('rsi')
-    lrl = ind.get('lrl')
-    r_sq = ind.get('r_square')
-    bb_u = ind.get('bb_upper')
-    bb_l = ind.get('bb_lower')
-    ma_s = ind.get('ma_short')
-    ma_l = ind.get('ma_long')
+    # 3. live_indicators 실시간 지표/수급 업데이트
+    # rsi, lrl 등은 ind가 있을 때만 업데이트하고, 없으면 기존값 유지(COALESCE)
+    rsi = ind.get('rsi') if ind else None
+    lrl = ind.get('lrl') if ind else None
+    r_sq = ind.get('r_square') if ind else None
+    bb_u = ind.get('bb_upper') if ind else None
+    bb_l = ind.get('bb_lower') if ind else None
+    ma_s = ind.get('ma_short') if ind else None
+    ma_l = ind.get('ma_long') if ind else None
 
-    # 2. [핵심 수정!!] 실시간 지표 테이블 업데이트 시 change_rate를 확실히 반영
     update_sql = """
         UPDATE live_indicators SET 
             last_price=%s, 
-            change_rate=%s, -- API에서 받은 전일비 등락률 직접 반영
+            change_rate=%s,
             rsi=%s, lrl=%s, r_square=%s, 
-            bb_upper=%s, bb_lower=%s, ma_short=%s, ma_long=%s, 
+            bb_upper=%s, bb_lower=%s, ma_short=%s, ma_long=%s,
+            foreign_net_5d=%s, institution_net_5d=%s, volume_profile=%s,
             updated_at=NOW(),
-            # 🚀 [단순화 로직]  
             detected_at = IF(DATE(detected_at) != DATE(NOW()) OR detected_at IS NULL, NOW(), detected_at)
         WHERE stock_code=%s
     """
-    db.execute_query(update_sql, (price, change_rate, rsi, lrl, r_sq, bb_u, bb_l, ma_s, ma_l, code))
+    db.execute_query(update_sql, (price, change_rate, rsi, lrl, r_sq, bb_u, bb_l, ma_s, ma_l, f_net, i_net, v_profile, code))
+    
+    # 4. 전략 시그널 판단 (지표가 없으면 여기서 중단 - 의도된 로직)
+    if not ind: return
 
-    # 3. 전략 시그널 판단 (BUY/SELL)
+    # 5. 전략 시그널 판단 (BUY/SELL)
     signal_type = None
     reason = ""
 
@@ -137,6 +148,8 @@ def process_batch(code_list, code_to_name):
             if code not in ohlcv_cache: continue
 
             ind_results = None
+            investor_data = None # [추가]
+            volume_data = None   # [추가]
 
             # 🚀 [이부분!!] last_p가 정의되지 않았던 문제를 last_price_cache.get(code)로 해결
             last_p = last_price_cache.get(code)
@@ -147,10 +160,19 @@ def process_batch(code_list, code_to_name):
                 df_hist = ohlcv_cache[code].copy()
                 new_row = pd.DataFrame({'close': [curr_price]})
                 df_combined = pd.concat([df_hist, new_row], ignore_index=True)
+                # 1. 지표 계산
                 ind_results = calculate_indicators_from_df(code, df_combined)
 
+            # 장외시간 가격변동이 없을때 테스트용 
+            # ind_results = calculate_indicators_from_df(code, df_combined)
+            print(f"📡 수급 체크")
+            # 2. [추가] 수급 및 매물대 데이터 가져오기 (사용자님 제공 API)
+            investor_data = kis.get_investor_trade_data(code)
+            volume_data = kis.get_price_volume_profile(code)
             # 🚀 [이부분!!] 가격 변동과 상관없이 이 함수를 호출해야 DB의 등락률이 네이버와 실시간 동기화됩니다.
-            check_strategy_and_save(code, name, curr_price, change_rate, ind_results)
+            # check_strategy_and_save(code, name, curr_price, change_rate, ind_results)
+            check_strategy_and_save(code, name, curr_price, change_rate, ind_results, investor_data, volume_data)
+            print(f"📡 매물대 체크")
 
             success_count += 1
         except Exception:
@@ -164,12 +186,10 @@ def collect_realtime_data():
     kis.auth()
 
     while True:
-        print("🚀 시스템 시작: 타겟 종목을 먼저 선정합니다...")
-        select_target_stocks()
         try:
             if not is_market_open():
                 print(f"💤 장외 대기 중... ({datetime.now(KST).strftime('%H:%M:%S')})")
-                time.sleep(60); continue
+                # time.sleep(60); continue
 
             start_time = time.time()
 
