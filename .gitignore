@@ -20,3 +20,5 @@ yarn-error.log*
 build/
 .pnp
 .pnp.js
+frontend/src/App copy.js
+frontend/src/App copy 2.js
