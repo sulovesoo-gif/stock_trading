@@ -21,7 +21,7 @@ const App = () => {
 
   const fetchData = async () => {
     try {
-      const res = await axios.get('http://127.0.0.1:8000/api/signals');
+      const res = await axios.get('http://168.107.5.155:8000/api/signals');
 
       const processedData = res.data.map(s => {
         const { rsi, r_square: r2, lrl, bb_upper: bb_up, bb_lower: bb_low, last_price: cur_p, ma_short } = s;
