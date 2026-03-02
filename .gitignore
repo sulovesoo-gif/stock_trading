@@ -11,3 +11,12 @@ env/
 # IDE 설정
 .vscode/
 .idea/
+
+# Node.js / React 관련 (이게 핵심입니다!)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+build/
+.pnp
+.pnp.js
