@@ -220,7 +220,7 @@ def collect_realtime_data():
         try:
             if not is_market_open():
                 print(f"💤 장외 대기 중... ({datetime.now(KST).strftime('%H:%M:%S')})")
-                # time.sleep(60); continue
+                ime.sleep(60); continue
 
             start_time = time.time()
 
