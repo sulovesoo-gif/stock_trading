@@ -1,7 +1,7 @@
 import time
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from core.db_client import db
 from core.api_helper import kis
@@ -34,8 +34,8 @@ def check_strategy_and_save(code, name, price, change_rate, ind, investor=None, 
     """
 
     # 1. 수급 및 매물대 데이터 가공 (ind와 상관없이 먼저 수행)
-    f_net = investor.get('foreign_net_5d', 0) if investor else 0
-    i_net = investor.get('institution_net_5d', 0) if investor else 0
+    f_net = investor.get('foreign_net_5d') if investor else 0
+    i_net = investor.get('institution_net_5d') if investor else 0
     v_profile = json.dumps(profile) if profile else None
 
     # [DB_TRACE]
@@ -58,24 +58,29 @@ def check_strategy_and_save(code, name, price, change_rate, ind, investor=None, 
     # rsi, lrl 등은 ind가 있을 때만 업데이트하고, 없으면 기존값 유지(COALESCE)
     rsi = ind.get('rsi') if ind else None
     lrl = ind.get('lrl') if ind else None
+    lrs = ind.get('lrs') if ind else None
     r_sq = ind.get('r_square') if ind else None
     bb_u = ind.get('bb_upper') if ind else None
     bb_l = ind.get('bb_lower') if ind else None
     ma_s = ind.get('ma_short') if ind else None
     ma_l = ind.get('ma_long') if ind else None
 
+    # ★ 지표 계산 여부를 판단하는 핵심 변수
+    indicator_time = datetime.now(timezone.utc) if ind else None
+
     update_sql = """
         UPDATE live_indicators SET 
             last_price=%s, 
             change_rate=%s,
-            rsi=%s, lrl=%s, r_square=%s, 
+            rsi=%s, lrl=%s, lrs=%s, r_square=%s, 
             bb_upper=%s, bb_lower=%s, ma_short=%s, ma_long=%s,
             foreign_net_5d=%s, institution_net_5d=%s, volume_profile=%s,
             updated_at=NOW(),
+            last_indicator_at=%s,
             detected_at = IF(DATE(detected_at) != DATE(NOW()) OR detected_at IS NULL, NOW(), detected_at)
         WHERE stock_code=%s
     """
-    db.execute_query(update_sql, (price, change_rate, rsi, lrl, r_sq, bb_u, bb_l, ma_s, ma_l, f_net, i_net, v_profile, code))
+    db.execute_query(update_sql, (price, change_rate, rsi, lrl, lrs, r_sq, bb_u, bb_l, ma_s, ma_l, f_net, i_net, v_profile, indicator_time, code))
     
     # 4. 전략 시그널 판단 (지표가 없으면 여기서 중단 - 의도된 로직)
     if not ind: return
@@ -139,7 +144,7 @@ def process_batch(code_list, code_to_name):
             change_rate = float(p.get('prdy_ctrt', 0))
             if not code or not curr_price_str: continue
             
-            print(f"📡 등락률 체크: {change_rate}")
+            # print(f"📡 등락률 체크: {change_rate}")
             
             curr_price = int(curr_price_str)
             name = code_to_name.get(code, "Unknown")
@@ -147,21 +152,47 @@ def process_batch(code_list, code_to_name):
             # [최적화] 이미 메인 루프에서 동기화된 ohlcv_cache 사용 (DB 조회 0번)
             if code not in ohlcv_cache: continue
 
-            ind_results = None
-            investor_data = None # [추가]
-            volume_data = None   # [추가]
-
             # 🚀 [이부분!!] last_p가 정의되지 않았던 문제를 last_price_cache.get(code)로 해결
+            # 1. 캐시에서 이전 가격 가져오기
             last_p = last_price_cache.get(code)
+            
+            # 2. 지표 결과 변수 초기화 (이건 유지하되)
+            ind_results = None 
+
+            print(f"📡 last_p: {last_p}")
+            print(f"📡 curr_price: {curr_price}")
+            print(f"📡 last_p != curr_price: {last_p != curr_price}")
+            # 3. 가격이 변했거나, 아예 처음 수집하는 경우만 계산 시도
+            if last_p != curr_price:
+                df_hist = ohlcv_cache.get(code)
+                if df_hist is not None:
+                    # 현재가를 포함한 임시 DF 생성
+                    new_row = pd.DataFrame({'close': [curr_price]})
+                    df_combined = pd.concat([df_hist, new_row], ignore_index=True)
+                    
+                    # 지표 계산
+                    ind_results = calculate_indicators_from_df(code, df_combined)
+                    
+                    # ★ 지표 계산이 성공했을 때만 가격 캐시를 업데이트 (매우 중요)
+                    if ind_results:
+                        last_price_cache[code] = curr_price
+                        print(f"✅ {name} 지표 계산 성공 및 캐시 갱신")
+                    else:
+                        print(f"⚠️ {name} 지표 계산 실패 (데이터 부족 등)")
+                else:
+                    print(f"❌ {name} ohlcv_cache 데이터 없음")
+            else:
+                print(f"😴 {name} 가격 변동 없음 ({curr_price}) - 계산 건너뜀")
+
 
             # 가격이 변했거나 처음 수집하는 경우에만 지표 연산을 수행합니다.
-            if last_p != curr_price:
-                last_price_cache[code] = curr_price
-                df_hist = ohlcv_cache[code].copy()
-                new_row = pd.DataFrame({'close': [curr_price]})
-                df_combined = pd.concat([df_hist, new_row], ignore_index=True)
-                # 1. 지표 계산
-                ind_results = calculate_indicators_from_df(code, df_combined)
+            # if last_p != curr_price:
+            #     last_price_cache[code] = curr_price
+            #     df_hist = ohlcv_cache[code].copy()
+            #     new_row = pd.DataFrame({'close': [curr_price]})
+            #     df_combined = pd.concat([df_hist, new_row], ignore_index=True)
+            #     # 1. 지표 계산
+            #     ind_results = calculate_indicators_from_df(code, df_combined)
 
             # 장외시간 가격변동이 없을때 테스트용 
             # ind_results = calculate_indicators_from_df(code, df_combined)

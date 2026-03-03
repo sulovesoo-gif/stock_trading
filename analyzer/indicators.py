@@ -38,6 +38,9 @@ def calculate_indicators_from_df(code, df):
             if np.std(y) != 0:
                 slope, intercept = np.polyfit(x, y, 1)
                 lrl_val = slope * (period - 1) + intercept
+
+                # [LRS 추가] 기울기 그 자체
+                lrs_val = slope
                 
                 # R-Square 계산
                 y_pred = slope * x + intercept
@@ -45,9 +48,9 @@ def calculate_indicators_from_df(code, df):
                 ss_tot = np.sum((y - np.mean(y))**2)
                 r_sq = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
             else:
-                lrl_val, r_sq = y[-1], 0
+                lrl_val, lrs_val, r_sq = y[-1], 0, 0
         else:
-            lrl_val, r_sq = None, 0
+            lrl_val, lrs_val, r_sq = None, None, 0
 
         # 최종 값 정리 및 결측치 처리
         def clean(val):
@@ -58,6 +61,7 @@ def calculate_indicators_from_df(code, df):
             'bb_upper': clean(bb_upper.iloc[-1]),
             'bb_lower': clean(bb_lower.iloc[-1]),
             'lrl': clean(lrl_val),
+            'lrs': clean(lrs_val),
             'r_square': clean(r_sq),
             'ma_short': clean(ma20.iloc[-1]),
             'ma_long': clean(df['close'].rolling(window=60).mean().iloc[-1]) if len(df) >= 60 else None

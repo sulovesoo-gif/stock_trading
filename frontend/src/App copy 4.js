@@ -24,9 +24,8 @@ const App = () => {
       const res = await axios.get('http://168.107.5.155:8000/api/signals');
 
       const processedData = res.data.map(s => {
-        const { rsi, r_square: r2, lrl, bb_upper: bb_up, bb_lower: bb_low, last_price: cur_p, ma_short, total_shares, detected_time } = s;
+        const { rsi, r_square: r2, lrl, bb_upper: bb_up, bb_lower: bb_low, last_price: cur_p, ma_short, detected_time } = s;
         const vol_ratio = s.volume_ratio; // 서버에서 온 null 또는 undefined를 유지
-        const lrlGap = s.lrl ? ((s.last_price - s.lrl) / s.lrl) * 100 : 0;
         const f_net = s.foreign_net_5d;
         const i_net = s.institution_net_5d;
 
@@ -74,13 +73,11 @@ const App = () => {
 
         return { 
           ...s, 
-          total_shares,
           detected_time,
-          lrl_gap: lrlGap,
           sig_grade: minGrade === 99 ? 9 : minGrade, 
           sig_name: gradeNames[minGrade] || "🔍 일반",
           sig_color: gradeColors[minGrade] || "#888888",
-          points_count: points.length, // 정렬 2순위 데이터
+          points_count: points.length, // 정렬 1순위 데이터
           display_point: points.length > 0 ? points.join(" & ") : "관망 유지",
           trade_icon: isUltra ? '⚡' : (isSuper ? '💎' : (isSellStrong ? '🚫' : '👀')),
           strat_type: (isSuper || isUltra) ? '창' : (isSellStrong ? '방패' : '관망'),
@@ -91,20 +88,10 @@ const App = () => {
       });
 
       const sortedData = [...processedData].sort((a, b) => {
-        // 1순위: 시그널 등급 (sig_grade) 오름차순 (예: 1등급이 최상단)
         if (a.sig_grade !== b.sig_grade) {
           return a.sig_grade - b.sig_grade;
         }
-        // 2순위: 점수 (points_count) 내림차순 (점수 높은 순)
-        if (b.points_count !== a.points_count) {
-          return b.points_count - a.points_count;
-        }
-        // 3순위: LRL 대비 등락률 (이격도 낮은 순 - 바닥권 종목 우선)
-        if (Math.abs(a.lrl_gap - b.lrl_gap) > 0.01) { // 미세 차이 무시 방지
-          return a.lrl_gap - b.lrl_gap;
-        }
-        // 4순위: 등락률 (change_rate) 내림차순 (수익률/탄력 높은 순)
-        return (b.change_rate || 0) - (a.change_rate || 0);
+        return b.points_count - a.points_count;
       });
 
       setStocks(sortedData);
@@ -193,44 +180,50 @@ const App = () => {
   const getDetailsData = useCallback((s) => {
     if (!s) return null;
 
-    // 상장주식수 대비 비율 계산 함수 (헌법 준수: 비율에 따른 단계별 문구)
-    const getScoring = (net_5d, total_shares) => {
-      if (!total_shares || total_shares === 0) return { txt: "데이터 부족", clr: "#888", pct: 0 };
-      
-      const pct = (net_5d / total_shares) * 100; // 5일 누적 매집 비율(%)
-      const absPct = Math.abs(pct);
-
-      let status = { txt: "🔵 순매도", clr: "#448AFF" };
-      if (pct >= 1.0) status = { txt: "👑 주도권 장악", clr: "#FF5252" };
-      else if (pct >= 0.5) status = { txt: "🔥 집중매집", clr: "#FF5252" };
-      else if (pct >= 0.2) status = { txt: "📈 수급개선", clr: "#FF5252" };
-      else if (pct > 0) status = { txt: "🔴 소폭유입", clr: "#FF5252" };
-      else if (pct <= -1.0) status = { txt: "💀 주도권 상실", clr: "#448AFF" };
-      return { 
-        ...status, 
-        pct: pct.toFixed(2), 
-        val: net_5d 
-      };
-
-    };
-
-    const f_stat = getScoring(s.foreign_net_5d, s.total_shares);
-    const i_stat = getScoring(s.institution_net_5d, s.total_shares);
-
-    // [기존 매물대 오프셋 및 지표 가이드 유지]
+    // 1. 매물대 데이터 계산 (위쪽 팝업의 로직 적용)
     const offsets = [0.04, 0.02, 0, -0.02, -0.04];
-    const rawVolumes = [12, 25, 48, 10, 5]; 
+    const rawVolumes = [12, 25, 48, 10, 5]; // 서버 데이터 연동 전 임시 비중
     const supplyPoints = offsets.map((offset, i) => ({
       price: Math.round(s.last_price * (1 + offset)),
       volumePct: rawVolumes[i]
     }));
 
+    // 2. 수급 상태 판별
+    const f_stat = s.foreign_net_5d > 0 
+      ? { txt: "👽 외인매집", clr: "#FF5252" } 
+      : { txt: "🔵 순매도", clr: "#448AFF" };
+    const i_stat = s.institution_net_5d > 0 
+      ? { txt: "🔴 기관매집", clr: "#FF5252" } 
+      : { txt: "🔵 순매도", clr: "#448AFF" };
+
+    // 3. 지표 판독 가이드 (위쪽 팝업의 문구와 조건으로 통일)
+    // 데이터가 없을 때(null)를 대비한 방어 로직 포함
     const guides = [
-      { label: "과열 유무(RSI)", val: s.rsi !== null ? Math.round(s.rsi) : "-", desc: s.rsi > 70 ? "⚠️ 과매수: 수익실현 고려" : "✅ 정상: 추세 유지 중" },
-      { label: "추세 강도(R-SQ)", val: s.r_square !== null ? s.r_square.toFixed(2) : "-", desc: s.r_square > 0.6 ? "🚀 강한상승: 홀딩 유지" : "⏳ 추세준비: 에너지 응축" },
-      { label: "폭발 구간(상단)", val: s.bb_upper?.toLocaleString() || "-", desc: s.last_price > s.bb_upper ? "🔥 상단돌파: 슈팅 구간" : "✅ 정상: 밴드 내 이동" },
-      { label: "중심 축(위치)", val: s.lrl?.toLocaleString() || "-", desc: s.last_price > s.lrl ? "📈 상방추세: 중심 위" : "📉 하방추세: 중심 아래" },
-      { label: "지지선(안착)", val: s.ma_short?.toLocaleString() || "-", desc: s.last_price > s.ma_short ? "🛡️ 지지: 하방경직 확보" : "⚠️ 이탈: 주의 필요" }
+      { 
+        label: "과열 유무(RSI)", 
+        val: s.rsi !== null ? Math.round(s.rsi) : "-", 
+        desc: s.rsi !== null ? (s.rsi > 70 ? "⚠️ 과매수: 수익실현 고려" : "✅ 정상: 추세 유지 중") : "데이터 분석 중..." 
+      },
+      { 
+        label: "추세 강도(R-SQ)", 
+        val: s.r_square !== null ? s.r_square.toFixed(2) : "-", 
+        desc: s.r_square !== null ? (s.r_square > 0.6 ? "🚀 강한상승: 홀딩 권장" : "⏳ 추세준비: 에너지 응축") : "데이터 분석 중..." 
+      },
+      { 
+        label: "폭발 구간(BB)", 
+        val: "상단", 
+        desc: (s.last_price && s.bb_upper) ? (s.last_price > s.bb_upper ? "🔥 상단돌파: 강한 슈팅 구간" : "✅ 정상: 밴드 내 이동") : "데이터 분석 중..." 
+      },
+      { 
+        label: "중심 축(LRL)", 
+        val: "위치", 
+        desc: (s.last_price && s.lrl) ? (s.last_price > s.lrl ? "📈 상방추세: 중심축 위" : "📉 하방추세: 중심축 아래") : "데이터 분석 중..." 
+      },
+      { 
+        label: "지지선(MA20)", 
+        val: "안착", 
+        desc: (s.last_price && s.ma_short) ? (s.last_price > s.ma_short ? "🛡️ 지지: 하방 경직 확보" : "⚠️ 이탈: 주의 필요") : "데이터 분석 중..." 
+      }
     ];
 
     return { supplyPoints, f_stat, i_stat, guides };
@@ -363,10 +356,10 @@ const App = () => {
               <th style={{ width: '80px' }}>포착시간</th>
               <th style={{ width: '60px' }}>현재가</th>
               <th style={{ width: '140px' }}>목표가 / 손절가</th>
-              <th style={{ width: '100px' }}>등락률 (LRL)</th>
-              <th style={{ width: '180px', paddingLeft: '15px' }}>선정 사유</th>
-              <th style={{ width: '240px' }}>핵심 포인트</th>
-              <th style={{ width: '80px' }}>추세게이지</th>
+              <th style={{ width: '40px' }}>등락률</th>
+              <th style={{ width: '150px', paddingLeft: '15px' }}>선정 사유</th>
+              <th style={{ width: '230px' }}>핵심 포인트</th>
+              <th style={{ width: '180px' }}>추세게이지</th>
               <th style={{ width: '40px' }}>상세</th>
             </tr>
           </thead>
@@ -381,18 +374,7 @@ const App = () => {
                       background: expandedIds.includes(s.stock_code) ? '#f0f4f8' : 'white' 
                     }}>
                   <td style={{ textAlign: 'center', fontSize: '18px' }}>{s.trade_icon}</td>
-
-
-
-
-                  <td style={{ padding: '0 10px' }}>
-                    <a href={`https://finance.naver.com/item/main.naver?code=${s.stock_code}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}>
-                      <b>{s.stock_name}</b> <span style={{color:'#888'}}>({s.stock_code})</span>
-                    </a>
-                  </td>
+                  <td style={{ padding: '0 10px' }}><b>{s.stock_name}</b> <span style={{color:'#888'}}>({s.stock_code})</span></td>
                   <td style={{ textAlign: 'center' }}>{s.market_type || '코스피'}</td>
                   <td style={{ textAlign: 'center', color: '#888' }}>{s.detected_time}</td>
                   <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{s.last_price.toLocaleString()}</td>
@@ -401,18 +383,7 @@ const App = () => {
                     <span style={{color:'#ccc', margin: '0 5px'}}>|</span>
                     <span style={{color:'#448AFF'}}>{(s.last_price * 0.95).toLocaleString()}</span>
                   </td>
-                  {/* <td style={{ textAlign: 'right', color: s.change_rate > 0 ? '#FF5252' : '#448AFF', fontWeight: 'bold' }}>{s.change_rate}%</td> */}
-                  <td style={{ textAlign: 'right', color: s.change_rate > 0 ? '#FF5252' : '#448AFF', fontWeight: 'bold' }}>{s.change_rate}% <span style={{ color: s.lrl_gap > 0 ? '#E67E22' : '#27AE60', fontSize: '10px' }}>(LRL: {s.lrl_gap}%)</span></td>
-                  {/* <td style={{ textAlign: 'right', padding: '0 10px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.2' }}>
-                      <span style={{ color: s.change_rate > 0 ? '#FF5252' : '#448AFF', fontWeight: 'bold' }}>
-                        {s.change_rate}%
-                      </span>
-                      <span style={{ color: s.lrl_gap > 0 ? '#E67E22' : '#27AE60', fontSize: '10px' }}>
-                        LRL: {s.lrl_gap}%
-                      </span>
-                    </div>
-                  </td> */}
+                  <td style={{ textAlign: 'right', color: s.change_rate > 0 ? '#FF5252' : '#448AFF', fontWeight: 'bold' }}>{s.change_rate}%</td>
                   <td style={{ padding: '0 15px', color: '#666' }}>{s.target_reason || "전략 분석 데이터"}</td>
                   <td style={{ color: '#E67E22', fontWeight: 'bold' }}>{s.display_point}</td>
                   <td style={{ padding: '0 15px' }}>{renderGauge(s.change_rate)}</td>
@@ -429,73 +400,55 @@ const App = () => {
 
       {/* 전략 상세 팝업 */}
       {selectedStock && (() => {
-        const d = getDetailsData(selectedStock);
-        return (
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
-            <div style={{ background: 'white', width: '900px', borderRadius: '12px', padding: '30px', position: 'relative' }}>
-              <button onClick={() => setSelectedStock(null)} style={{ position: 'absolute', right: '20px', top: '10px', border: 'none', background: 'none', fontSize: '28px', cursor: 'pointer', color: '#999' }}>&times;</button>
-              
-              <div style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '2px', paddingBottom: '5px', borderBottom: '2px solid #f0f0f0' }}>
-                  📊 {selectedStock.stock_name}(<span style={{fontSize: '14px', color: '#888', fontWeight: 'normal'}}>{selectedStock.stock_code}</span>) 전략 분석 
-              </div>
+  const d = getDetailsData(selectedStock); // 동일한 헬퍼 함수 호출
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
+      <div style={{ background: 'white', width: '900px', borderRadius: '8px', padding: '25px', position: 'relative', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+        <button onClick={() => setSelectedStock(null)} style={{ position: 'absolute', right: '20px', top: '20px', border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
+        
+        <div style={{ fontSize: '19px', fontWeight: 'bold', paddingBottom: '12px', borderBottom: '1px solid #eee', marginBottom: '20px' }}>
+            📊 {selectedStock.stock_name}({selectedStock.stock_code}) 전략분석 | <span style={{color: selectedStock.sig_color}}>{selectedStock.sig_name}</span>
+        </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.2fr 2fr', gap: '30px' }}>
-                {/* 수급 */}
-                <div style={{ fontSize: '14px', lineHeight: '2.5' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#555' }}>외인(5일 누적)</span> 
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ color: d.f_stat.clr, fontWeight: 'bold', fontSize: '14px' }}>
-                        {d.f_stat.pct} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.f_stat.val?.toLocaleString()})</span> %
-                      </span>
-                      {parseFloat(d.f_stat.pct) >= 0.2 && (
-                        <span style={{ background: d.f_stat.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.f_stat.txt}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#555' }}>기관(5일 누적)</span> 
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ color: d.i_stat.clr, fontWeight: 'bold', fontSize: '14px' }}>
-                        {d.i_stat.pct} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.i_stat.val?.toLocaleString()})</span> %
-                      </span>
-                      {parseFloat(d.i_stat.pct) >= 0.2 && (
-                        <span style={{ background: d.i_stat.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.i_stat.txt}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 매물대 - 높이 24px 고정 */}
-                <div>
-                  <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#2C3E50', borderBottom: '1px solid #FFD54F', paddingBottom: '5px', marginBottom: '12px' }}>🧱 핵심 매물대</p>
-                  {d.supplyPoints.map((p, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', height: '18px', marginBottom: '4px' }}>
-                      <div style={{ width: '60px', fontSize: '11px', color: '#999', textAlign: 'right', marginRight: '10px' }}>{p.price.toLocaleString()}</div>
-                      <div style={{ flexGrow: 1, background: '#f0f0f0', height: '10px', borderRadius: '5px' }}>
-                        <div style={{ width: `${p.volumePct}%`, background: p.volumePct > 15 ? "#FF5252" : "#4DB6AC", height: '100%', borderRadius: '5px' }}></div>
-                      </div>
-                      <div style={{ width: '35px', fontSize: '10px', color: '#666', marginLeft: '10px', textAlign: 'right' }}>{p.volumePct}%</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 판독 가이드 - 높이 24px 고정 */}
-                <div>
-                  <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#2C3E50', borderBottom: '1px solid #9575CD', paddingBottom: '5px', marginBottom: '12px' }}>💡 지표 판독 가이드</p>
-                  {d.guides.map((g, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', height: '18px', marginBottom: '4px' }}>
-                      <div style={{ width: '110px', fontWeight: 'bold', fontSize: '12px', color: '#555' }}>{g.label}</div>
-                      <div style={{ width: '45px', fontWeight: 'bold', color: '#E67E22', textAlign: 'center', fontSize: '12px' }}>[{g.val}]</div>
-                      <div style={{ marginLeft: '10px', color: '#666', fontSize: '12px' }}>{g.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.2fr 2fr', gap: '25px', alignItems: 'start' }}>
+          {/* 수급 현황 */}
+          <div>
+            <p style={{ fontSize: '0.85em', fontWeight: 'bold', borderBottom: '1px solid #4DB6AC', marginBottom: '10px', paddingBottom: '3px' }}>👥 수급 현황</p>
+            <div style={{ fontSize: '13px', lineHeight: '2' }}>
+              외인: <span style={{ color: d.f_stat.clr, fontWeight: 'bold' }}>{d.f_stat.txt}</span> ({selectedStock.foreign_net_5d?.toLocaleString()})<br/>
+              기관: <span style={{ color: d.i_stat.clr, fontWeight: 'bold' }}>{d.i_stat.txt}</span> ({selectedStock.institution_net_5d?.toLocaleString()})
             </div>
           </div>
-        );
-      })()}
+
+          {/* 매물대 */}
+          <div>
+            <p style={{ fontSize: '0.85em', fontWeight: 'bold', borderBottom: '1px solid #FFD54F', marginBottom: '10px', paddingBottom: '3px' }}>🧱 핵심 매물대</p>
+            {d.supplyPoints.map((p, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', height: '22px', marginBottom: '4px' }}>
+                <div style={{ width: '60px', fontSize: '11px', color: '#888', textAlign: 'right', marginRight: '8px' }}>{p.price.toLocaleString()}</div>
+                <div style={{ flexGrow: 1, background: '#f0f0f0', height: '10px', borderRadius: '3px' }}>
+                  <div style={{ width: `${p.volumePct}%`, background: p.volumePct > 15 ? "#FF5252" : "#4DB6AC", height: '100%', borderRadius: '3px' }}></div>
+                </div>
+                <div style={{ width: '35px', fontSize: '10px', color: '#666', marginLeft: '8px' }}>{p.volumePct}%</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 지표 판독 가이드 */}
+          <div>
+            <p style={{ fontSize: '0.85em', fontWeight: 'bold', borderBottom: '1px solid #9575CD', marginBottom: '10px', paddingBottom: '3px' }}>💡 지표 판독 가이드</p>
+            {d.guides.map((g, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', height: '24px', fontSize: '12px', marginBottom: '4px' }}>
+                <div style={{ minWidth: '110px', fontWeight: 'bold', color: '#555' }}>{g.label.split('(')[0]} ({g.val})</div>
+                <div style={{ marginLeft: '10px', color: '#666' }}>{g.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})()}
       {/* 전략 상세 팝업 */}
 
       
@@ -510,63 +463,101 @@ const DetailRow = React.memo(({ stock, getDetails }) => {
   return (
     <tr>
       <td colSpan="10" style={{ background: '#f8f9fa', padding: '0px', borderBottom: '2px solid #2C3E50' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.3fr 2.5fr', gap: '1px', background: '#dee2e6' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.8fr', gap: '1px', background: '#dee2e6' }}>
           
           {/* [1. 수급 분석] */}
           <div style={{ background: 'white', padding: '12px 15px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #4DB6AC', paddingBottom: '3px' }}>👥 5일 수급 분석</div>
-            <div style={{ fontSize: '12px', lineHeight: '2.2' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #4DB6AC', pb: '3px' }}>👥 5일 수급 분석</div>
+            <div style={{ fontSize: '12px', lineHeight: '2' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#666' }}>외인</span>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ color: d.f_stat.clr, fontWeight: 'bold' }}>
-                    {d.f_stat.pct}({d.f_stat.val?.toLocaleString()})%
-                  </span>
-                  {parseFloat(d.f_stat.pct) >= 0.2 && (
-                    <span style={{ background: d.f_stat.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.f_stat.txt}</span>
-                  )}
-                </div>
+                <span style={{ color: d.f_stat.clr, fontWeight: 'bold' }}>{d.f_stat.txt} <small style={{fontWeight:'normal', color:'#888'}}>({stock.foreign_net_5d?.toLocaleString()})</small></span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#666' }}>기관</span>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ color: d.i_stat.clr, fontWeight: 'bold' }}>
-                    {d.i_stat.pct}({d.i_stat.val?.toLocaleString()})%
-                  </span>
-                  {parseFloat(d.i_stat.pct) >= 0.2 && (
-                    <span style={{ background: d.i_stat.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.i_stat.txt}</span>
-                  )}
-                </div>
+                <span style={{ color: d.i_stat.clr, fontWeight: 'bold' }}>{d.i_stat.txt} <small style={{fontWeight:'normal', color:'#888'}}>({stock.institution_net_5d?.toLocaleString()})</small></span>
               </div>
             </div>
           </div>
 
-          {/* [2. 핵심 매물대 - 높이 20px씩] */}
+          {/* [2. 매물대] */}
           <div style={{ background: 'white', padding: '12px 15px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #FFD54F', paddingBottom: '3px' }}>🧱 핵심 매물대</div>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #FFD54F', pb: '3px' }}>🧱 핵심 매물대</div>
             {d.supplyPoints.map((p, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', height: '20px', marginBottom: '2px' }}>
-                <span style={{ fontSize: '10px', width: '50px', color: '#999', textAlign: 'right', marginRight: '8px' }}>{p.price.toLocaleString()}</span>
-                <div style={{ flex: 1, height: '8px', background: '#eee', borderRadius: '4px' }}>
-                  <div style={{ width: `${p.volumePct}%`, height: '100%', background: p.volumePct > 15 ? '#FF5252' : '#4DB6AC', borderRadius: '4px' }}></div>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: '3px', height: '16px' }}>
+                <span style={{ fontSize: '10px', width: '55px', color: '#999', textAlign: 'right', marginRight: '8px' }}>{p.price.toLocaleString()}</span>
+                <div style={{ flex: 1, height: '7px', background: '#eee', borderRadius: '2px' }}>
+                  <div style={{ width: `${p.volumePct}%`, height: '100%', background: p.volumePct > 15 ? '#FF5252' : '#4DB6AC', borderRadius: '2px' }}></div>
                 </div>
                 <span style={{ fontSize: '9px', width: '25px', textAlign: 'right', marginLeft: '5px', color: '#888' }}>{p.volumePct}%</span>
               </div>
             ))}
           </div>
 
-          {/* [3. 지표 판독 가이드 - 높이 20px씩] */}
+          {/* [3. 지표 판독 가이드] - 팝업 문구와 100% 일치 */}
           <div style={{ background: 'white', padding: '12px 15px' }}>
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #9575CD', paddingBottom: '3px' }}>💡 지표 판독 가이드</div>
-            {d.guides.map((g, i) => (
-              <div key={i} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', height: '20px', marginBottom: '2px' }}>
-                <span style={{ fontWeight: 'bold', width: '100px', color: '#555' }}>{g.label}</span>
-                <span style={{ color: '#E67E22', fontWeight: 'bold', width: '40px', textAlign: 'center' }}>[{g.val}]</span>
-                <span style={{ color: '#666', flex: 1, marginLeft: '5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.desc}</span>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #9575CD', pb: '3px' }}>💡 지표 판독 가이드</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {d.guides.map((g, i) => (
+                <div key={i} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #f9f9f9', paddingBottom: '2px' }}>
+                  <span style={{ fontWeight: 'bold', width: '110px', color: '#555' }}>{g.label}</span>
+                  <span style={{ color: '#E67E22', fontWeight: 'bold', width: '45px' }}>[{g.val}]</span>
+                  <span style={{ color: '#666', flex: 1 }}>{g.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </td>
+    </tr>
+  );
+});
+
+const DetailRow2 = React.memo(({ stock, getDetails }) => {
+  const d = useMemo(() => getDetails(stock), [stock, getDetails]);
+  if (!d) return null;
+  return (
+    <tr>
+      <td colSpan="10" style={{ background: '#f8f9fa', padding: '0px', borderBottom: '2px solid #2C3E50' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 2.5fr', gap: '1px', background: '#dee2e6' }}>
+          <div style={{ background: 'white', padding: '10px 15px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '8px' }}>👥 5일 수급 분석</div>
+            <div style={{ fontSize: '12px', lineHeight: '1.8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>외인</span>
+                <span style={{ color: d.f_stat.clr, fontWeight: 'bold' }}>{d.f_stat.txt} ({stock.foreign_net_5d?.toLocaleString()})</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>기관</span>
+                <span style={{ color: d.i_stat.clr, fontWeight: 'bold' }}>{d.i_stat.txt} ({stock.institution_net_5d?.toLocaleString()})</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '10px 15px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '8px' }}>🧱 매물대 (금액순)</div>
+            {d.supplyPoints.map((p, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: '3px', height: '14px' }}>
+                <span style={{ fontSize: '10px', width: '55px', color: '#888', textAlign: 'right', marginRight: '8px' }}>{p.price.toLocaleString()}원</span>
+                <div style={{ flex: 1, height: '6px', background: '#eee', borderRadius: '3px' }}>
+                  <div style={{ width: `${p.volumePct}%`, height: '100%', background: i < 2 ? '#FF5252' : '#4DB6AC', borderRadius: '3px' }}></div>
+                </div>
+                <span style={{ fontSize: '10px', width: '25px', textAlign: 'right', marginLeft: '5px', color: '#666' }}>{p.volumePct}%</span>
               </div>
             ))}
           </div>
-
+          <div style={{ background: 'white', padding: '10px 15px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '8px' }}>⚠️ 초보자를 위한 핵심 지표 판독</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {d.guides.map((g, i) => (
+                <div key={i} style={{ fontSize: '11px', display: 'flex', borderBottom: '1px solid #f0f0f0', paddingBottom: '2px' }}>
+                  <span style={{ fontWeight: 'bold', width: '100px', color: '#555' }}>{g.label}</span>
+                  <span style={{ color: '#E67E22', fontWeight: 'bold', marginRight: '10px' }}>[{g.val}]</span>
+                  <span style={{ color: '#666' }}>{g.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </td>
     </tr>

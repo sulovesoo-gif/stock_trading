@@ -38,6 +38,7 @@ class StockSignal(BaseModel):
     foreign_net_5d: float
     institution_net_5d: float
     volume_profile: Optional[str]
+    total_shares: int
     detected_time: str
 
 # --- [핵심 로직: 시그널 판정 함수] ---
@@ -103,9 +104,10 @@ def get_all_signals():
             bb_upper=float(row['bb_upper']),
             bb_lower=float(row['bb_lower']),
             ma_short=float(row['ma_short']),
-            foreign_net_5d=float(row.get('foreign_net_5d', 0)),
-            institution_net_5d=float(row.get('institution_net_5d', 0)),
+            foreign_net_5d=float(row.get('foreign_net_5d')),
+            institution_net_5d=float(row.get('institution_net_5d')),
             volume_profile=row.get('volume_profile'),
+            total_shares=int(row['total_shares']),
             detected_time=d_time
         ))
     

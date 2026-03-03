@@ -55,6 +55,8 @@ def select_target_stocks():
                     for item in rank_list:
                         code = item['mksc_shrn_iscd']
                         name = item['hts_kor_isnm']
+                        total_shares = int(item['lstn_stcn'])
+                        
                         print(f"✅ {name} 등록되었습니다.")
                         # 사유 생성 (예: 코스피 거래대금)
                         # current_reason = f"{s_name} {c_name}"
@@ -70,7 +72,7 @@ def select_target_stocks():
                         #     }
                             
                         if code not in all_targets:
-                            all_targets[code] = {'name': name, 'reason': c_name}
+                            all_targets[code] = {'name': name, 'reason': c_name, 'total_shares': total_shares}
                         else:
                             if c_name not in all_targets[code]['reason']:
                                 all_targets[code]['reason'] += f", {c_name}"
@@ -85,6 +87,25 @@ def select_target_stocks():
             except Exception as e:
                 print(f"❌ {s_name}-{c_name} 조회 오류: {e}")
 
+    
+    print("📥 내 포트폴리오(관심/보유) 데이터를 분석 대상에 병합 중...")
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 포트폴리오의 코드, 이름, 사유, 상장주식수 가져오기
+            cursor.execute("SELECT stock_code, stock_name, reason, total_shares FROM my_portfolio")
+            portfolio_rows = cursor.fetchall()
+            
+            for p_code, p_name, p_reason, p_shares in portfolio_rows:
+                # 이미 시장 수집 데이터(all_targets)에 있다면 사유만 업데이트
+                if p_code in all_targets:
+                    # 중복 사유 방지 및 포트폴리오 표시 추가
+                    if "[포트폴리오]" not in all_targets[p_code]['reason']:
+                        all_targets[p_code]['reason'] = f"{all_targets[p_code]['reason']} [포트폴리오]"
+                else:
+                    # 시장 수집 데이터에 없는 종목이면 새로 추가
+                    all_targets[p_code] = {'name': p_name, 'reason': f"{p_reason} [포트폴리오]", 'total_shares': p_shares if p_shares else 0 }
+    
     if not all_targets:
         print("⚠️ 수집된 종목이 없습니다.")
         return
@@ -95,10 +116,10 @@ def select_target_stocks():
         with conn.cursor() as cursor:
             # 기존 후보 삭제
             cursor.execute("DELETE FROM target_candidates")
-            
+
             # 데이터 준비
-            insert_data = [(code, reason) for code, reason in all_targets.items()]
-            insert_data = [(code, info['name'], info['reason']) for code, info in all_targets.items()]
+            #insert_data = [(code, reason, total_shares) for code, reason, total_shares in all_targets.items()]
+            insert_data = [(code, info['name'], info['reason'], info['total_shares']) for code, info in all_targets.items()]
             
             # selected_at 컬럼을 포함한 쿼리
             # sql = "INSERT INTO target_candidates (stock_code, reason, selected_at) VALUES (%s, %s, NOW())"
@@ -110,8 +131,17 @@ def select_target_stocks():
             #     cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, updated_at) VALUES (%s, NOW())", (code,))
 
             for code, info in all_targets.items():
-                cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, updated_at) VALUES (%s, NOW())", (code,))
-            
+                #cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, total_shares, updated_at) VALUES (%s, %s, NOW())", (code, info['total_shares']))
+                sql = """
+                INSERT INTO live_indicators (stock_code, total_shares, updated_at) 
+                VALUES (%s, %s, NOW())
+                ON DUPLICATE KEY UPDATE 
+                    total_shares = VALUES(total_shares),
+                    updated_at = NOW()
+                """
+                cursor.executemany(sql, (code, info['total_shares']))
+
+
             conn.commit()
         print(f"✅ 총 {len(insert_data)}개 종목이 'selected_at'과 함께 등록되었습니다.")
     finally:
