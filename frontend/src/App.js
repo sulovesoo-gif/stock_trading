@@ -23,7 +23,7 @@ const App = () => {
       const res = await axios.get('http://168.107.5.155:8000/api/signals');
       const processedData = res.data.map(s => {
         const { rsi, r_square, lrl, bb_upper, bb_lower, last_price, ma_short, total_shares, detected_time, volume_ratio, foreign_net_5d, institution_net_5d } = s;
-        const lrl_gap = s.lrl ? ((s.last_price - s.lrl) / s.lrl) * 100 : 0;
+        const lrl_gap = s.lrl ? (((s.last_price - s.lrl) / s.lrl) * 100).toFixed(2) : 0;
 
         let points = [];
         let minGrade = 99; 
@@ -99,7 +99,7 @@ const App = () => {
         if (b.points_count !== a.points_count) {
           return b.points_count - a.points_count;
         }
-        // 3순위: LRL 대비 등락률 (이격도 낮은 순 - 바닥권 종목 우선)
+        // 3순위: LRL 대비 등락률 (이격도 낮은 순 - 바닥change_rate권 종목 우선)
         if (Math.abs(a.lrl_gap - b.lrl_gap) > 0.01) { // 미세 차이 무시 방지
           return a.lrl_gap - b.lrl_gap;
         }
