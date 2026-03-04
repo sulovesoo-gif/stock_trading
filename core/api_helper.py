@@ -163,6 +163,14 @@ class KISApiHelper:
                     print(f"⚠️ [수급] {code} 응답 성공했으나 데이터(output2)가 비어있음")
                     return None
                     
+                # 1️⃣ 오늘(최신) 데이터 1개만 가져오기
+                today_data = output2[0] 
+                
+                # 2️⃣ 오늘 날짜의 거래량/거래대금만 추출 (단위 케어)
+                # ※ 주의: 거래대금은 백만원 단위이므로 필요시 계산
+                volume = int(today_data.get('acml_vol', 0))
+                amount = int(today_data.get('acml_tr_pbmn', 0))
+                
                 # 최근 5일치 순매수량 합산
                 recent_5 = output2[:5]
                 f_net = sum(int(day.get('frgn_ntby_qty', 0)) for day in recent_5)
@@ -171,7 +179,9 @@ class KISApiHelper:
                 print(f"📡 [API] {code} 수급 수신 완료 (외인:{f_net}/기관:{i_net})")
                 return {
                     'foreign_net_5d': f_net,
-                    'institution_net_5d': i_net
+                    'institution_net_5d': i_net,
+                    'volume': volume,
+                    'amount': amount
                 }
             else:
                 print(f"⚠️ [수급] API 서버 응답 비정상 (상태코드: {res.status_code})")

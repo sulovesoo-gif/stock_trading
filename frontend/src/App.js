@@ -5,7 +5,6 @@ const App = () => {
   const [stocks, setStocks] = useState([]);
   const [topPicks, setTopPicks] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
-  const [activeTab, setActiveTab] = useState('market'); // 탭 상태 추가
   const [expandedIds, setExpandedIds] = useState([]);
 
   useEffect(() => {
@@ -22,71 +21,72 @@ const App = () => {
   const fetchData = async () => {
     try {
       const res = await axios.get('http://168.107.5.155:8000/api/signals');
-
       const processedData = res.data.map(s => {
-        const { rsi, r_square: r2, lrl, bb_upper: bb_up, bb_lower: bb_low, last_price: cur_p, ma_short, total_shares, detected_time } = s;
-        const vol_ratio = s.volume_ratio; // 서버에서 온 null 또는 undefined를 유지
-        const lrlGap = s.lrl ? ((s.last_price - s.lrl) / s.lrl) * 100 : 0;
-        const f_net = s.foreign_net_5d;
-        const i_net = s.institution_net_5d;
+        const { rsi, r_square, lrl, bb_upper, bb_lower, last_price, ma_short, total_shares, detected_time, volume_ratio, foreign_net_5d, institution_net_5d } = s;
+        const lrl_gap = s.lrl ? ((s.last_price - s.lrl) / s.lrl) * 100 : 0;
 
         let points = [];
         let minGrade = 99; 
 
         // --- [매수/매도 시그널 전수 조사: 누적] ---
+        // 0️⃣ 데이터 부재 및 분석 불가 (등급외)
+        // 핵심 지표인 RSI와 R-Square가 모두 0이거나 데이터가 유실된 경우
+        if (rsi === 0 && r_square === 0 && lrl === 0) {
+          points.push("🔍 분석불가: 데이터 대기");
+        }else{
+          // 1️⃣ 로켓 (1등급)
+          if (r_square > 0.7 && last_price > lrl && last_price > bb_upper && (foreign_net_5d > 0 || institution_net_5d > 0)) {
+            points.push("🚀로켓"); if (minGrade > 1) minGrade = 1;
+          }
+          // 2️⃣ 바닥탈출 (2등급)
+          if (rsi < 35 && r_square < 0.25 && last_price > ma_short) {
+            points.push("✨바닥탈출"); if (minGrade > 2) minGrade = 2;
+          }
+          // 3️⃣ 슈퍼매집 (3등급)
+          if (last_price > lrl && r_square >= 0.8 && (foreign_net_5d > 0 && institution_net_5d > 0)) {
+            points.push("💎슈퍼매집"); if (minGrade > 3) minGrade = 3;
+          }
+          // 4️⃣ 에너지폭발 (4등급)
+          if ((bb_upper - bb_lower) / last_price < 0.05 && last_price > bb_upper && volume_ratio > 250) {
+            points.push("🧨에너지폭발"); if (minGrade > 4) minGrade = 4;
+          }
+          // 5️⃣ 세력철벽지지 (5등급)
+          if (last_price <= lrl * 1.01 && last_price >= lrl * 0.99 && (foreign_net_5d > 0 || institution_net_5d > 0)) {
+            points.push("🛡️철벽지지"); if (minGrade > 5) minGrade = 5;
+          }
+          // 10️⃣ 초과열매도 (10등급)
+          if (rsi > 78 && last_price > bb_upper * 1.05) {
+            points.push("💀초과열매도"); if (minGrade > 10) minGrade = 10;
+          }
+          // 11️⃣ 추세붕괴 (11등급)
+          if (last_price < lrl * 0.95 && foreign_net_5d < 0 && institution_net_5d < 0) {
+            points.push("📉추세붕괴"); if (minGrade > 11) minGrade = 11;
+          }
+          // 12️⃣ 세력이탈 (12등급)
+          if (rsi > 70 && foreign_net_5d < -50000) {
+            points.push("⚠️세력이탈"); if (minGrade > 12) minGrade = 12;
+          }
+        }
 
-        // 1️⃣ 로켓 (1등급)
-        if (r2 > 0.7 && cur_p > lrl && cur_p > bb_up && (f_net > 0 || i_net > 0)) {
-          points.push("🚀로켓"); if (minGrade > 1) minGrade = 1;
-        }
-        // 2️⃣ 바닥탈출 (2등급)
-        if (rsi < 35 && r2 < 0.25 && cur_p > ma_short) {
-          points.push("✨바닥탈출"); if (minGrade > 2) minGrade = 2;
-        }
-        // 3️⃣ 슈퍼매집 (3등급)
-        if (cur_p > lrl && r2 >= 0.8 && (f_net > 0 && i_net > 0)) {
-          points.push("💎슈퍼매집"); if (minGrade > 3) minGrade = 3;
-        }
-        // 4️⃣ 에너지폭발 (4등급)
-        if ((bb_up - bb_low) / cur_p < 0.05 && cur_p > bb_up && vol_ratio > 250) {
-          points.push("🧨에너지폭발"); if (minGrade > 4) minGrade = 4;
-        }
-        // 5️⃣ 세력철벽지지 (5등급)
-        if (cur_p <= lrl * 1.01 && cur_p >= lrl * 0.99 && (f_net > 0 || i_net > 0)) {
-          points.push("🛡️철벽지지"); if (minGrade > 5) minGrade = 5;
-        }
-        // 10️⃣ 초과열매도 (10등급)
-        if (rsi > 78 && cur_p > bb_up * 1.05) {
-          points.push("💀초과열매도"); if (minGrade > 10) minGrade = 10;
-        }
-        // 11️⃣ 추세붕괴 (11등급)
-        if (cur_p < lrl * 0.95 && f_net < 0 && i_net < 0) {
-          points.push("📉추세붕괴"); if (minGrade > 11) minGrade = 11;
-        }
-        // 12️⃣ 세력이탈 (12등급)
-        if (rsi > 70 && f_net < -50000) {
-          points.push("⚠️세력이탈"); if (minGrade > 12) minGrade = 12;
-        }
-
-        const isSuper = minGrade >= 1 && minGrade <= 3;
-        const isUltra = minGrade === 4 || minGrade === 5;
-        const isSellStrong = minGrade >= 10;
+        const is_super = minGrade >= 1 && minGrade <= 3;
+        const is_ultra = minGrade === 4 || minGrade === 5;
+        const is_sell_strong = minGrade >= 10;
 
         return { 
           ...s, 
           total_shares,
           detected_time,
-          lrl_gap: lrlGap,
+          lrl_gap,
           sig_grade: minGrade === 99 ? 9 : minGrade, 
           sig_name: gradeNames[minGrade] || "🔍 일반",
           sig_color: gradeColors[minGrade] || "#888888",
           points_count: points.length, // 정렬 2순위 데이터
           display_point: points.length > 0 ? points.join(" & ") : "관망 유지",
-          trade_icon: isUltra ? '⚡' : (isSuper ? '💎' : (isSellStrong ? '🚫' : '👀')),
-          strat_type: (isSuper || isUltra) ? '창' : (isSellStrong ? '방패' : '관망'),
-          is_super: isSuper,
-          is_ultra: isUltra,
-          is_sell_strong: isSellStrong
+          trade_icon: is_ultra ? '⚡' : (is_super ? '💎' : (is_sell_strong ? '🚫' : '👀')),
+          strat_type: (is_super || is_ultra) ? '창' : (is_sell_strong ? '방패' : '관망'),
+          is_super,
+          is_ultra,
+          is_sell_strong
         };
       });
 
@@ -195,27 +195,35 @@ const App = () => {
 
     // 상장주식수 대비 비율 계산 함수 (헌법 준수: 비율에 따른 단계별 문구)
     const getScoring = (net_5d, total_shares) => {
-      if (!total_shares || total_shares === 0) return { txt: "데이터 부족", clr: "#888", pct: 0 };
+      const n_net = Number(net_5d) || 0;
+      const n_total = Number(total_shares) || 0;
+
+      // 상장주식수가 0인 경우(데이터 미도달) 비율 계산만 생략하고 수량은 반환
+      if (n_total === 0) {
+        return { 
+          txt: n_net > 0 ? "🔴 유입중" : (n_net < 0 ? "🔵 유출중" : "-"), 
+          clr: n_net > 0 ? "#FF5252" : (n_net < 0 ? "#448AFF" : "#888"), 
+          pct: "0", 
+          val: n_net 
+        };
+      }
       
-      const pct = (net_5d / total_shares) * 100; // 5일 누적 매집 비율(%)
-      const absPct = Math.abs(pct);
+      const pctRaw = (n_net / n_total) * 100;
+      const pct = pctRaw.toFixed(2);
+      const comparePct = parseFloat(pct);
 
       let status = { txt: "🔵 순매도", clr: "#448AFF" };
-      if (pct >= 1.0) status = { txt: "👑 주도권 장악", clr: "#FF5252" };
-      else if (pct >= 0.5) status = { txt: "🔥 집중매집", clr: "#FF5252" };
-      else if (pct >= 0.2) status = { txt: "📈 수급개선", clr: "#FF5252" };
-      else if (pct > 0) status = { txt: "🔴 소폭유입", clr: "#FF5252" };
-      else if (pct <= -1.0) status = { txt: "💀 주도권 상실", clr: "#448AFF" };
-      return { 
-        ...status, 
-        pct: pct.toFixed(2), 
-        val: net_5d 
-      };
+      if (comparePct >= 0.5) status = { txt: "👑 주도권 장악", clr: "#FF5252" };
+      else if (comparePct >= 0.2) status = { txt: "🔥 집중매집", clr: "#FF5252" };
+      else if (comparePct >= 0.05) status = { txt: "📈 수급개선", clr: "#FF5252" };
+      else if (comparePct > 0) status = { txt: "🔴 소폭유입", clr: "#FF5252" };
+      else if (comparePct <= -1.0) status = { txt: "💀 주도권 상실", clr: "#448AFF" };
 
+      return { ...status, pct, val: n_net };
     };
 
-    const f_stat = getScoring(s.foreign_net_5d, s.total_shares);
-    const i_stat = getScoring(s.institution_net_5d, s.total_shares);
+    const foreign_stats = getScoring(s.foreign_net_5d, s.total_shares);
+    const institution_stats = getScoring(s.institution_net_5d, s.total_shares);
 
     // [기존 매물대 오프셋 및 지표 가이드 유지]
     const offsets = [0.04, 0.02, 0, -0.02, -0.04];
@@ -233,7 +241,7 @@ const App = () => {
       { label: "지지선(안착)", val: s.ma_short?.toLocaleString() || "-", desc: s.last_price > s.ma_short ? "🛡️ 지지: 하방경직 확보" : "⚠️ 이탈: 주의 필요" }
     ];
 
-    return { supplyPoints, f_stat, i_stat, guides };
+    return { supplyPoints, foreign_stats, institution_stats, guides };
   }, []);
 
   return (
@@ -441,26 +449,27 @@ const App = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.2fr 2fr', gap: '30px' }}>
                 {/* 수급 */}
-                <div style={{ fontSize: '14px', lineHeight: '2.5' }}>
+                <div style={{ fontSize: '10px', lineHeight: '2.5' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #4DB6AC', paddingBottom: '3px' }}>👥 5일 수급 분석</div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ color: '#555' }}>외인(5일 누적)</span> 
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ color: d.f_stat.clr, fontWeight: 'bold', fontSize: '14px' }}>
-                        {d.f_stat.pct} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.f_stat.val?.toLocaleString()})</span> %
+                      <span style={{ color: d.foreign_stats.clr, fontWeight: 'bold', fontSize: '14px' }}>
+                        {d.foreign_stats.val?.toLocaleString()} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.foreign_stats.pct}%)</span> 
                       </span>
-                      {parseFloat(d.f_stat.pct) >= 0.2 && (
-                        <span style={{ background: d.f_stat.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.f_stat.txt}</span>
+                      {parseFloat(d.foreign_stats.pct) >= 0.2 && (
+                        <span style={{ background: d.foreign_stats.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.foreign_stats.txt}</span>
                       )}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ color: '#555' }}>기관(5일 누적)</span> 
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ color: d.i_stat.clr, fontWeight: 'bold', fontSize: '14px' }}>
-                        {d.i_stat.pct} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.i_stat.val?.toLocaleString()})</span> %
+                      <span style={{ color: d.institution_stats.clr, fontWeight: 'bold', fontSize: '14px' }}>
+                        {d.institution_stats.val?.toLocaleString()} <span style={{ fontSize: '12px', fontWeight: 'normal' }}>({d.institution_stats.pct}%)</span>
                       </span>
-                      {parseFloat(d.i_stat.pct) >= 0.2 && (
-                        <span style={{ background: d.i_stat.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.i_stat.txt}</span>
+                      {parseFloat(d.institution_stats.pct) >= 0.2 && (
+                        <span style={{ background: d.institution_stats.clr, color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginLeft: '10px' }}>{d.institution_stats.txt}</span>
                       )}
                     </div>
                   </div>
@@ -517,24 +526,24 @@ const DetailRow = React.memo(({ stock, getDetails }) => {
             <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#2C3E50', marginBottom: '10px', borderBottom: '1px solid #4DB6AC', paddingBottom: '3px' }}>👥 5일 수급 분석</div>
             <div style={{ fontSize: '12px', lineHeight: '2.2' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#666' }}>외인</span>
+                <span style={{ color: '#666' }}>외인(5일 누적)</span>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ color: d.f_stat.clr, fontWeight: 'bold' }}>
-                    {d.f_stat.pct}({d.f_stat.val?.toLocaleString()})%
+                  <span style={{ color: d.foreign_stats.clr, fontWeight: 'bold' }}>
+                    {d.foreign_stats.val?.toLocaleString()}({d.foreign_stats.pct}%)
                   </span>
-                  {parseFloat(d.f_stat.pct) >= 0.2 && (
-                    <span style={{ background: d.f_stat.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.f_stat.txt}</span>
+                  {parseFloat(d.foreign_stats.pct) >= 0.2 && (
+                    <span style={{ background: d.foreign_stats.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.foreign_stats.txt}</span>
                   )}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#666' }}>기관</span>
+                <span style={{ color: '#666' }}>기관(5일 누적)</span>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ color: d.i_stat.clr, fontWeight: 'bold' }}>
-                    {d.i_stat.pct}({d.i_stat.val?.toLocaleString()})%
+                  <span style={{ color: d.institution_stats.clr, fontWeight: 'bold' }}>
+                    {d.institution_stats.val?.toLocaleString()}({d.institution_stats.pct}%)
                   </span>
-                  {parseFloat(d.i_stat.pct) >= 0.2 && (
-                    <span style={{ background: d.i_stat.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.i_stat.txt}</span>
+                  {parseFloat(d.institution_stats.pct) >= 0.2 && (
+                    <span style={{ background: d.institution_stats.clr, color: 'white', padding: '1px 4px', borderRadius: '3px', fontSize: '0.7em', fontWeight: 'bold', marginLeft: '5px' }}>{d.institution_stats.txt}</span>
                   )}
                 </div>
               </div>
@@ -561,7 +570,7 @@ const DetailRow = React.memo(({ stock, getDetails }) => {
             {d.guides.map((g, i) => (
               <div key={i} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', height: '20px', marginBottom: '2px' }}>
                 <span style={{ fontWeight: 'bold', width: '100px', color: '#555' }}>{g.label}</span>
-                <span style={{ color: '#E67E22', fontWeight: 'bold', width: '40px', textAlign: 'center' }}>[{g.val}]</span>
+                <span style={{ color: '#E67E22', fontWeight: 'bold', width: '50px', textAlign: 'center' }}>[{g.val}]</span>
                 <span style={{ color: '#666', flex: 1, marginLeft: '5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.desc}</span>
               </div>
             ))}

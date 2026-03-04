@@ -36,6 +36,8 @@ def check_strategy_and_save(code, name, price, change_rate, ind, investor=None, 
     # 1. 수급 및 매물대 데이터 가공 (ind와 상관없이 먼저 수행)
     f_net = investor.get('foreign_net_5d') if investor else 0
     i_net = investor.get('institution_net_5d') if investor else 0
+    volume = investor.get('volume') if investor else 0
+    amount = investor.get('amount') if investor else 0
     v_profile = json.dumps(profile) if profile else None
 
     # [DB_TRACE]
@@ -44,15 +46,16 @@ def check_strategy_and_save(code, name, price, change_rate, ind, investor=None, 
     # [데이터 추가 A] market_ohlcv 당일 시세 업데이트 (대시보드 히스토리용)
     # 오늘 데이터가 없으면 INSERT, 있으면 최신가로 UPDATE (고가/저가 갱신 포함)
     insert_sql = """
-        INSERT INTO market_ohlcv (stock_code, datetime, open, high, low, close, volume)
-        VALUES (%s, CURDATE(), %s, %s, %s, %s, 0)
+        INSERT INTO market_ohlcv (stock_code, datetime, open, high, low, close, volume, amount)
+        VALUES (%s, CURDATE(), %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE 
             close = VALUES(close),
             high = IF(VALUES(close) > high, VALUES(close), high),
             low = IF(VALUES(close) < low, VALUES(close), low),
-            datetime = NOW() -- [수정] 마지막 업데이트 시간 기록
+            volume = VALUES(volume),
+            amount = VALUES(amount)
     """
-    db.execute_query(insert_sql, (code, price, price, price, price))
+    db.execute_query(insert_sql, (code, price, price, price, price, volume, amount))
 
     # 3. live_indicators 실시간 지표/수급 업데이트
     # rsi, lrl 등은 ind가 있을 때만 업데이트하고, 없으면 기존값 유지(COALESCE)

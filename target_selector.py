@@ -10,15 +10,12 @@ def select_target_stocks():
     url = f"{kis.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
     all_targets = {} 
 
-    # 0001: 코스피, 1001: 코스닥
-    sectors = {"0001": "코스피", "1001": "코스닥"}
-    
-    # 확장된 기준: 3(거래대금), 0(평균거래량), 4(등락률상위), 5(신고가)
+    sectors = {"0000": "전체시장"}
     criteria = {
-        "3": "거래대금", 
         "0": "평균거래량",
+        "3": "거래대금", 
         "4": "등락률상위",
-        "5": "신고가"
+        "5": "신고가" #이건 없는 코드다!!!!!!!!!!!!!!!!!!!!!!
     }
 
     for s_code, s_name in sectors.items():
@@ -55,95 +52,69 @@ def select_target_stocks():
                     for item in rank_list:
                         code = item['mksc_shrn_iscd']
                         name = item['hts_kor_isnm']
-                        total_shares = int(item['lstn_stcn'])
+                        # 상장주식수 안전하게 정수 변환
+                        total_shares = int(item.get('lstn_stcn', 0))
                         
-                        print(f"✅ {name} 등록되었습니다.")
-                        # 사유 생성 (예: 코스피 거래대금)
-                        # current_reason = f"{s_name} {c_name}"
-                        # if code in all_targets:
-                        #     # [수정 부분!!] 이미 존재하는 종목이면 사유만 누적 (중복 체크)
-                        #     if current_reason not in all_targets[code]['reason']:
-                        #         all_targets[code]['reason'] += f", {current_reason}"
-                        # else:
-                        #     # [수정 부분!!] 처음 발견된 종목이면 이름과 사유를 딕셔너리로 저장
-                        #     all_targets[code] = {
-                        #         'name': name,
-                        #         'reason': current_reason
-                        #     }
-                            
                         if code not in all_targets:
                             all_targets[code] = {'name': name, 'reason': c_name, 'total_shares': total_shares}
                         else:
                             if c_name not in all_targets[code]['reason']:
                                 all_targets[code]['reason'] += f", {c_name}"
-                        # 사유 누적
-                        # if code in all_targets:
-                        #     if c_name not in all_targets[code]:
-                        #         all_targets[code] += f", {c_name}"
-                        # else:
-                        #     all_targets[code] = f"{s_name} {c_name}"
                 time.sleep(0.2)
-                    
             except Exception as e:
                 print(f"❌ {s_name}-{c_name} 조회 오류: {e}")
 
-    
-    print("📥 내 포트폴리오(관심/보유) 데이터를 분석 대상에 병합 중...")
+    print("📥 내 포트폴리오 데이터를 분석 대상에 병합 중...")
     conn = db.get_connection()
     try:
         with conn.cursor() as cursor:
-            # 포트폴리오의 코드, 이름, 사유, 상장주식수 가져오기
             cursor.execute("SELECT stock_code, stock_name, reason, total_shares FROM my_portfolio")
             portfolio_rows = cursor.fetchall()
             
             for p_code, p_name, p_reason, p_shares in portfolio_rows:
-                # 이미 시장 수집 데이터(all_targets)에 있다면 사유만 업데이트
                 if p_code in all_targets:
-                    # 중복 사유 방지 및 포트폴리오 표시 추가
                     if "[포트폴리오]" not in all_targets[p_code]['reason']:
                         all_targets[p_code]['reason'] = f"{all_targets[p_code]['reason']} [포트폴리오]"
                 else:
-                    # 시장 수집 데이터에 없는 종목이면 새로 추가
                     all_targets[p_code] = {'name': p_name, 'reason': f"{p_reason} [포트폴리오]", 'total_shares': p_shares if p_shares else 0 }
-    
+    finally:
+        # 첫 번째 DB 연결 해제
+        conn.close()
+
+    # 데이터가 없으면 여기서 종료
     if not all_targets:
         print("⚠️ 수집된 종목이 없습니다.")
         return
 
-    # DB 저장 (selected_at 포함)
+    # 두 번째 DB 연결: 데이터 저장 시작
     conn = db.get_connection()
     try:
         with conn.cursor() as cursor:
             # 기존 후보 삭제
             cursor.execute("DELETE FROM target_candidates")
 
-            # 데이터 준비
-            #insert_data = [(code, reason, total_shares) for code, reason, total_shares in all_targets.items()]
-            insert_data = [(code, info['name'], info['reason'], info['total_shares']) for code, info in all_targets.items()]
-            
-            # selected_at 컬럼을 포함한 쿼리
-            # sql = "INSERT INTO target_candidates (stock_code, reason, selected_at) VALUES (%s, %s, NOW())"
-            sql = "INSERT INTO target_candidates (stock_code, stock_name, reason, selected_at) VALUES (%s, %s, %s, NOW())"
-            cursor.executemany(sql, insert_data)
-            
-            # live_indicators 초기 레코드 생성 (중복 무시)
-            # for code, _ in insert_data:
-            #     cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, updated_at) VALUES (%s, NOW())", (code,))
+            # target_candidates 저장용 리스트 생성
+            insert_data = [(code, info['name'], info['reason']) for code, info in all_targets.items()]
+            sql_cand = "INSERT INTO target_candidates (stock_code, stock_name, reason, selected_at) VALUES (%s, %s, %s, NOW())"
+            cursor.executemany(sql_cand, insert_data)
 
+            # live_indicators 업데이트 (t_shares 오타 수정 완료)
             for code, info in all_targets.items():
-                #cursor.execute("INSERT IGNORE INTO live_indicators (stock_code, total_shares, updated_at) VALUES (%s, %s, NOW())", (code, info['total_shares']))
-                sql = """
+                t_shares = info.get('total_shares', 0)
+                sql_live = """
                 INSERT INTO live_indicators (stock_code, total_shares, updated_at) 
                 VALUES (%s, %s, NOW())
                 ON DUPLICATE KEY UPDATE 
                     total_shares = VALUES(total_shares),
                     updated_at = NOW()
                 """
-                cursor.executemany(sql, (code, info['total_shares']))
-
+                cursor.execute(sql_live, (code, t_shares))
 
             conn.commit()
-        print(f"✅ 총 {len(insert_data)}개 종목이 'selected_at'과 함께 등록되었습니다.")
+            print(f"✅ 총 {len(insert_data)}개 종목 업데이트 완료.")
+    except Exception as e:
+        print(f"❌ DB 저장 중 오류 발생: {e}")
+        conn.rollback()
     finally:
         conn.close()
 
