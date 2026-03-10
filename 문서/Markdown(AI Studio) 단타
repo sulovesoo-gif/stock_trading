@@ -1,0 +1,31 @@
+![alt text](fast_logic.png)
+![alt text](fast_desc.png)
+
+
+편집창에서는 안 보이고 Preview에서 보임
+방법
+Ctrl + Shift + V → Preview 열기
+또는
+Ctrl + K → V (Split preview)
+
+
+컬럼명 (Key),설명,용도
+code,종목코드,식별자
+curr_price,현재가,실시간 수익률 계산
+accum_vol,누적 거래량,거래량 동향 분석
+buy_vol_sum,매수 체결량 합,체결강도 분자
+sell_vol_sum,매도 체결량 합,체결강도 분모
+strength,체결강도,단타 진입 주요 지표
+
+
+
+/projects/stock_trading/
+├── backend/            # 기존 API 서버
+├── frontend/           # 기존 리액트 대시보드 (여기에 단타 페이지 추가)
+├── collector/          # 기존 수집기 (Daily/Hourly)
+├── trader/             # 기존 매매 로직
+├── fast_engine/        # [NEW] 단타 전용 실시간 엔진 (Websocket 기반)
+│   ├── ws_client.py    # 증권사 시세 수신
+│   ├── calculator.py   # 실시간 체결강도/분봉 계산
+│   └── broadcaster.py  # 프론트엔드로 데이터 전달
+└── sc_trader.py        # [NEW] 단타 실행 진입점 (Scalping Trader)

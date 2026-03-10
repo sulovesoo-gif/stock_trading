@@ -14,6 +14,7 @@ class KISApiHelper:
         self.base_url = "https://openapi.koreainvestment.com:9443" # 실전 서버
         self.app_key = os.getenv('KIS_API_KEY')
         self.app_secret = os.getenv('KIS_API_SECRET')
+        self.hts_id = os.getenv('KIS_USER')
         self.access_token = ""
         self.token_expired_at = datetime.now(KST)
 
@@ -251,5 +252,142 @@ class KISApiHelper:
         except Exception as e:
             print(f"❌ [매물대] API 통신 에러 ({code}): {e}")
             return None
+
+    def get_approval_key(self):
+        """웹소켓 접속을 위한 임시 승인키 발급"""
+        url = f"{self.base_url}/oauth2/Approval"
+        headers = {"content-type": "application/json"}
+        body = {
+            "grant_type": "client_credentials",
+            "appkey": self.app_key,
+            "secretkey": self.app_secret
+        }
+        res = requests.post(url, headers=headers, json=json.dumps(body))
+        return res.json().get("approval_key")
+
+    def get_my_interests(self, group_code="000"):
+        """
+        [국내주식-203] 관심종목 그룹별 종목조회 API (TR: HHKCM113004C6)
+        """
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-stocklist-by-group"
+        self.auth()
+        
+        headers = {
+            "content-type": "application/json; charset=utf-8",
+            "authorization": f"Bearer {self.access_token}",
+            "appkey": self.app_key,
+            "appsecret": self.app_secret,
+            "tr_id": "HHKCM113004C6",
+            "custtype": "P"
+        }
+        
+        # [수정 포인트] 명세서의 Unique key 값들을 보강
+        params = {
+            "TYPE": "1",               # Unique key(1)
+            "USER_ID": "",             # 보통 공백 허용이나, 에러 지속 시 HTS ID 입력 필요
+            "DATA_RANK": "",           # 공백
+            "INTER_GRP_CODE": group_code,
+            "INTER_GRP_NAME": "",
+            "HTS_KOR_ISNM": "",
+            "CNTG_CLS_CODE": "",
+            "FID_ETC_CLS_CODE": "00"    # [중요] Unique key(4) - 보통 '0' 또는 ' ' 사용
+        }
+        
+        try:
+            # 보낸 파라미터를 로그로 확인 (디버깅용)
+            res = requests.get(url, headers=headers, params=params)
+            data = res.json()
+            
+            if data.get('rt_cd') == '0':
+                output2 = data.get('output2', [])
+                # 종목코드 필드가 'jong_code'인지 'iscd'인지 명세서에 따라 확인
+                codes = [item['jong_code'].strip() for item in output2 if 'jong_code' in item]
+                print(f"✅ 관심종목 {len(codes)}개 로드 완료.")
+                return codes
+            else:
+                print(f"❌ 관심종목 조회 실패: {data.get('msg1')} [{data.get('msg_cd')}]")
+                # 실패 원인이 FID_ETC_CLS_CODE라면 다른 값으로 재시도하는 로직이 필요할 수 있음
+                return []
+        except Exception as e:
+            print(f"❌ API 연결 에러: {e}")
+            return []
+    
+    # [api_helper.py - KISApiHelper 클래스 내부에 교체/추가]
+
+    def get_my_interests(self):
+        """
+        [최종판] 한투 API 문서 기준 관심종목 조회 2단계 로직
+        1. 그룹 목록 조회 -> 2. 첫 번째 그룹의 종목 리스트 추출
+        """
+        # --- [준비 단계] ---
+        self.auth()
+        
+        # --- [1단계: 관심종목 그룹 조회 (HHKCM113004C7)] ---
+        group_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-grouplist"
+        group_params = {
+            "TYPE": "1",
+            "FID_ETC_CLS_CODE": "00", # 문서 명시 값
+            "USER_ID": self.hts_id
+        }
+        group_headers = {
+            "content-type": "application/json",
+            "authorization": f"Bearer {self.access_token}",
+            "appKey": self.app_key,
+            "appSecret": self.app_secret,
+            "tr_id": "HHKCM113004C7",
+            "custtype": "P"
+        }
+        
+        try:
+            time.sleep(0.05)
+            res_group = requests.get(group_url, headers=group_headers, params=group_params)
+            group_data = res_group.json()
+            
+            # 그룹 코드 추출 (보통 첫 번째 그룹 '000' 등)
+            groups = group_data.get('output2', [])
+            if not groups:
+                print("⚠️ 등록된 관심종목 그룹이 없습니다.")
+                return []
+            
+            target_group_code = groups[0].get('inter_grp_code', '000')
+            print(f"📂 관심그룹 포착: {groups[0].get('inter_grp_name')} ({target_group_code})")
+
+            # --- [2단계: 그룹별 종목 조회 (HHKCM113004C6)] ---
+            stock_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-stocklist-by-group"
+            stock_params = {
+                "TYPE": "1",
+                "USER_ID": self.hts_id,
+                "DATA_RANK": "",
+                "INTER_GRP_CODE": target_group_code,
+                "INTER_GRP_NAME": "",
+                "HTS_KOR_ISNM": "",
+                "CNTG_CLS_CODE": "",
+                "FID_ETC_CLS_CODE": "4" # 문서 명시 값
+            }
+            stock_headers = {
+                "content-type": "application/json",
+                "authorization": f"Bearer {self.access_token}",
+                "appKey": self.app_key,
+                "appSecret": self.app_secret,
+                "tr_id": "HHKCM113004C6",
+                "custtype": "P"
+            }
+            
+            time.sleep(0.05)
+            res_stock = requests.get(stock_url, headers=stock_headers, params=stock_params)
+            stock_data = res_stock.json()
+            
+            if stock_data.get('rt_cd') == '0':
+                output2 = stock_data.get('output2', [])
+                codes = [item['jong_code'].strip() for item in output2 if 'jong_code' in item]
+                print(f"✅ 최종 {len(codes)}개 종목 로드 완료: {codes}")
+                return codes
+            else:
+                print(f"❌ 종목 리스트 조회 실패: {stock_data.get('msg1')}")
+                return []
+
+        except Exception as e:
+            print(f"❌ 관심종목 연동 중 오류 발생: {e}")
+            return []
         
 kis = KISApiHelper()

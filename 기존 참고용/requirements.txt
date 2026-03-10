@@ -5,3 +5,5 @@ pandas
 pyyaml
 scipy
 python-dotenv
+react-router-dom
+websockets
