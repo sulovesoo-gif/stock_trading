@@ -14,5 +14,9 @@ numpy
 pymysql
 cryptography
 
+# 단타용
+react-router-dom
+websockets
+
 # 시간 처리
 zoneinfo; python_version < "3.9"
