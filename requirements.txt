@@ -15,7 +15,6 @@ pymysql
 cryptography
 
 # 단타용
-react-router-dom
 websockets
 
 # 시간 처리
