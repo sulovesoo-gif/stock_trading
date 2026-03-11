@@ -14,8 +14,10 @@ numpy
 pymysql
 cryptography
 
-# 단타용
+# [단타 및 복호화 필수 추가 항목]
 websockets
+websocket-client
+pycryptodome
 
 # 시간 처리
 zoneinfo; python_version < "3.9"

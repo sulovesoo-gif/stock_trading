@@ -31,17 +31,32 @@ class FastScalpingCalculator:
 
         status = self.stock_status[code]
         
+        # 데이터 타입에 따른 분기 처리
+        if data.get('type') == 'HOKA':
+            status['hoka'] = {
+                'ask': data['ask'], # 매도호가 리스트
+                'bid': data['bid'], # 매수호가 리스트
+                'total_ask_v': data['total_ask_v'],
+                'total_bid_v': data['total_bid_v']
+            }
+        else:
+            # 기존 체결가 업데이트 로직
+            status['curr_price'] = data['price']
+            status['strength'] = data.get('strength', status['strength'])
+            now = time.time()
+            status['ticks'].append({'t': now, 'v': data['volume'], 'side': data['side']})
+        
         # 2. 기본 정보 업데이트
-        status['curr_price'] = data['price']
-        status['strength'] = data['strength']
+        #status['curr_price'] = data['price']
+        #status['strength'] = data['strength']
         
         # 3. 틱 데이터 저장 (시간, 수량, 구분)
-        now = time.time()
-        status['ticks'].append({
-            't': now,
-            'v': data['volume'],
-            'side': data['side'] # 1:매수, 5:매도
-        })
+        # now = time.time()
+        # status['ticks'].append({
+        #     't': now,
+        #     'v': data['volume'],
+        #     'side': data['side'] # 1:매수, 5:매도
+        # })
 
         # 4. 초당 체결 속도(Tick Speed) 계산
         # 최근 5초 내에 발생한 틱의 개수를 계산하여 수급 폭발 확인
@@ -68,7 +83,8 @@ class FastScalpingCalculator:
             "strength": s['strength'],
             "speed": round(s['tick_speed'], 2),
             "vwap": round(s['vwap'], 0),
-            "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL" # 초당 5건 이상 체결 시 핫스팟
+            "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL", # 초당 5건 이상 체결 시 핫스팟
+            "hoka": s['hoka'] # 대시보드로 호가 데이터 전달
         }
 
 # 테스트 코드

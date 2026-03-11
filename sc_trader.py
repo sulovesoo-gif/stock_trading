@@ -4,21 +4,37 @@ import json
 import websockets
 from fast_engine.ws_client import KISWebsocketClient
 from fast_engine.calculator import FastScalpingCalculator
+from core.api_helper import kis
 
 async def main():
-    # 1. 엔진 초기화
+    # 1. 시작할 때 한 번만 종목명 맵핑 정보를 가져옴
+    stock_names = kis.get_my_interests_with_names()
+    init_data = {
+        "type": "INIT",
+        "stocks": [
+            {"code": code, "name": name} for code, name in stock_names.items()
+        ]
+    }
+    
+    # 2. 엔진 초기화
     client = KISWebsocketClient()
     calc = FastScalpingCalculator()
 
     # 내부 큐를 활용해 Broadcaster 연결 유지
     queue = asyncio.Queue()
 
+    await queue.put(init_data)
+    
     async def on_tick_received(tick_data):
         summary = calc.update_tick(tick_data)
         if summary:
+            # 3. 실시간 데이터(summary)에 종목명(name) 필드 강제 주입
+            code = summary['code']
+            summary['name'] = stock_names.get(code, code) # 이름 없으면 코드라도 표시
+
             await queue.put(summary)
             # 터미널에 데이터 수신 로그가 찍히는지 확인용
-            print(f"DEBUG: [{summary['code']}] {summary['price']} - Speed: {summary['speed']}")
+            print(f"DEBUG: [{summary['name']}] [{summary['code']}] {summary['price']} - Speed: {summary['speed']}")
 
     # Broadcaster로 데이터를 계속 쏴주는 별도 태스크
     async def sender():
