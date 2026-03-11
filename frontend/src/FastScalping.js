@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 
-const FastScalping = ({ serverIp = "localhost" }) => {
-// const FastScalping = ({ serverIp = "168.107.5.155" }) => {
+// const FastScalping = ({ serverIp = "localhost" }) => {
+const FastScalping = ({ serverIp = "168.107.5.155" }) => {
   const [realtimeData, setRealtimeData] = useState({});
   const ws = useRef(null);
 
