@@ -11,53 +11,35 @@ class FastScalpingCalculator:
         self.window_seconds = 5 
 
     def update_tick(self, data):
-        """
-        ws_client로부터 수신한 체결 데이터를 메모리에 업데이트
-        data: {'code', 'price', 'volume', 'strength', 'side', 'time', ...}
-        """
         code = data['code']
-        
-        # 1. 해당 종목 데이터 초기화 (최초 수신 시)
         if code not in self.stock_status:
             self.stock_status[code] = {
                 'curr_price': 0,
                 'strength': 0.0,
                 'accum_vol': 0,
-                'ticks': deque(maxlen=200), # 최근 200개 체결 내역 저장
-                'tick_speed': 0,            # 초당 체결 건수
-                'vwap': 0.0,                # 당일 거래량 가중 평균가
-                'total_amt': 0,             # 누적 거래대금 (계산용)
+                'ticks': deque(maxlen=200),
+                'tick_speed': 0,
+                'vwap': 0.0,
+                'total_amt': 0,
+                'rate': 0.0, # <--- 1. 등락율 저장소 추가
+                'hoka': None
             }
 
         status = self.stock_status[code]
         
-        # 데이터 타입에 따른 분기 처리
         if data.get('type') == 'HOKA':
+            # 호가 업데이트 로직 동일
             status['hoka'] = {
-                'ask': data['ask'], # 매도호가 리스트
-                'bid': data['bid'], # 매수호가 리스트
-                'total_ask_v': data['total_ask_v'],
-                'total_bid_v': data['total_bid_v']
+                'ask': data['ask'], 'bid': data['bid'],
+                'total_ask_v': data['total_ask_v'], 'total_bid_v': data['total_bid_v']
             }
         else:
-            # 기존 체결가 업데이트 로직
             status['curr_price'] = data['price']
             status['strength'] = data.get('strength', status['strength'])
+            status['rate'] = data.get('rate', status['rate']) # <--- 2. 체결 데이터에서 rate 추출
             now = time.time()
             status['ticks'].append({'t': now, 'v': data['volume'], 'side': data['side']})
         
-        # 2. 기본 정보 업데이트
-        #status['curr_price'] = data['price']
-        #status['strength'] = data['strength']
-        
-        # 3. 틱 데이터 저장 (시간, 수량, 구분)
-        # now = time.time()
-        # status['ticks'].append({
-        #     't': now,
-        #     'v': data['volume'],
-        #     'side': data['side'] # 1:매수, 5:매도
-        # })
-
         # 4. 초당 체결 속도(Tick Speed) 계산
         # 최근 5초 내에 발생한 틱의 개수를 계산하여 수급 폭발 확인
         recent_ticks = [t for t in status['ticks'] if now - t['t'] < self.window_seconds]
@@ -83,8 +65,9 @@ class FastScalpingCalculator:
             "strength": s['strength'],
             "speed": round(s['tick_speed'], 2),
             "vwap": round(s['vwap'], 0),
-            "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL", # 초당 5건 이상 체결 시 핫스팟
-            "hoka": s['hoka'] # 대시보드로 호가 데이터 전달
+            "rate": s['rate'], # <--- 3. 프론트로 보낼 데이터에 포함
+            "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL",
+            "hoka": s['hoka']
         }
 
 # 테스트 코드
@@ -96,4 +79,4 @@ if __name__ == "__main__":
         'strength': 105.2, 'side': '1', 'time': '103001'
     }
     summary = calc.update_tick(test_data)
-    print(f"Summary: {summary}")
+    # print(f"Summary: {summary}")

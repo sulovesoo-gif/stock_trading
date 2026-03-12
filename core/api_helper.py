@@ -16,11 +16,12 @@ class KISApiHelper:
         self.app_secret = os.getenv('KIS_API_SECRET')
         self.hts_id = os.getenv('KIS_USER')
         self.access_token = ""
-        self.token_expired_at = datetime.now(KST)
+        self.token_expired_at = datetime.now(KST) - timedelta(hours=1)
+        self.session = requests.Session() # 세션 재사용으로 속도 향상
 
     def auth(self):
         """접근 토큰 발급 (유효기간 확인 후 재발급)"""
-        # 토큰이 있고 만료 전(여유시간 1분)이면 기존 토큰 반환
+        # 토큰이 있고 만료 전(여유시간 10분)이면 기존 토큰 반환
         if self.access_token and datetime.now(KST) < self.token_expired_at - timedelta(minutes=1):
             return self.access_token
 
@@ -31,7 +32,7 @@ class KISApiHelper:
             "appkey": self.app_key,
             "appsecret": self.app_secret
         }
-        res = requests.post(url, headers=headers, json=body)
+        res = self.session.post(url, headers=headers, json=body)
         res.raise_for_status()
         data = res.json()
         
@@ -56,7 +57,7 @@ class KISApiHelper:
             "PDNO": stock_code,
             "PRDT_TYPE_CD": "300" # 주식
         }
-        res = requests.get(url, headers=headers, params=params)
+        res = self.session.get(url, headers=headers, params=params)
         if res.status_code == 200:
             data = res.json()
             return data['output']['prdt_abrv_name'] # 종목 약명
@@ -87,7 +88,7 @@ class KISApiHelper:
             params[f"FID_INPUT_ISCD_{idx}"] = code
 
         try:
-            res = requests.get(url, headers=headers, params=params)
+            res = self.session.get(url, headers=headers, params=params)
             if res.status_code == 200:
                 res_data = res.json()
                 # [응답 필드 매핑] 명세서상 현재가는 'inter2_prpr' 등의 이름을 가질 수 있음
@@ -113,7 +114,7 @@ class KISApiHelper:
         params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": ",".join(code_list)}
 
         try:
-            res = requests.get(url, headers=headers, params=params)
+            res = self.session.get(url, headers=headers, params=params)
             
             # [수정 포인트] 응답 상태 코드가 200(성공)이고 내용이 있을 때만 JSON 변환
             if res.status_code == 200 and res.text:
@@ -154,7 +155,7 @@ class KISApiHelper:
         }
 
         try:
-            res = requests.get(url, headers=headers, params=params)
+            res = self.session.get(url, headers=headers, params=params)
             
             if res.status_code == 200 and res.text:
                 data = res.json()
@@ -217,7 +218,7 @@ class KISApiHelper:
         }
 
         try:
-            res = requests.get(url, headers=headers, params=params)
+            res = self.session.get(url, headers=headers, params=params)
             
             if res.status_code == 200 and res.text:
                 data = res.json()
@@ -263,7 +264,7 @@ class KISApiHelper:
             "secretkey": self.app_secret
         }
         # json.dumps()를 제거하고 딕셔너리 객체(body)를 직접 전달합니다.
-        res = requests.post(url, headers=headers, json=body)
+        res = self.session.post(url, headers=headers, json=body)
         
         if res.status_code == 200:
             approval_key = res.json().get("approval_key")
@@ -274,138 +275,40 @@ class KISApiHelper:
             return None
 
     def get_my_interests(self):
-        """
-        [최종판] 한투 API 문서 기준 관심종목 조회 2단계 로직
-        1. 그룹 목록 조회 -> 2. 첫 번째 그룹의 종목 리스트 추출
-        """
-        # --- [준비 단계] ---
+        """[수정본] 필수 빈 값 파라미터를 포함하여 딕셔너리 반환"""
         self.auth()
         
-        # --- [1단계: 관심종목 그룹 조회 (HHKCM113004C7)] ---
         group_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-grouplist"
-        group_params = {
-            "TYPE": "1",
-            "FID_ETC_CLS_CODE": "00", # 문서 명시 값
-            "USER_ID": self.hts_id
-        }
+        group_params = {"TYPE": "1", "FID_ETC_CLS_CODE": "00", "USER_ID": self.hts_id}
         group_headers = {
             "content-type": "application/json",
             "authorization": f"Bearer {self.access_token}",
-            "appKey": self.app_key,
-            "appSecret": self.app_secret,
-            "tr_id": "HHKCM113004C7",
-            "custtype": "P"
+            "appKey": self.app_key, "appSecret": self.app_secret,
+            "tr_id": "HHKCM113004C7", "custtype": "P"
         }
         
         try:
             time.sleep(0.05)
             res_group = requests.get(group_url, headers=group_headers, params=group_params)
-            group_data = res_group.json()
-            
-            # 그룹 코드 추출 (보통 첫 번째 그룹 '000' 등)
-            groups = group_data.get('output2', [])
-            if not groups:
-                print("⚠️ 등록된 관심종목 그룹이 없습니다.")
-                return []
+            groups = res_group.json().get('output2', [])
+            if not groups: return {}
             
             target_group_code = groups[0].get('inter_grp_code', '000')
             print(f"📂 관심그룹 포착: {groups[0].get('inter_grp_name')} ({target_group_code})")
 
-            # --- [2단계: 그룹별 종목 조회 (HHKCM113004C6)] ---
+            # 🚀 [핵심 교정] 한투 API가 요구하는 모든 필드를 빈 값으로라도 채워서 보냅니다.
             stock_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-stocklist-by-group"
             stock_params = {
-                "TYPE": "1",
-                "USER_ID": self.hts_id,
-                "DATA_RANK": "",
-                "INTER_GRP_CODE": target_group_code,
-                "INTER_GRP_NAME": "",
-                "HTS_KOR_ISNM": "",
-                "CNTG_CLS_CODE": "",
-                "FID_ETC_CLS_CODE": "4" # 문서 명시 값
-            }
-            stock_headers = {
-                "content-type": "application/json",
-                "authorization": f"Bearer {self.access_token}",
-                "appKey": self.app_key,
-                "appSecret": self.app_secret,
-                "tr_id": "HHKCM113004C6",
-                "custtype": "P"
-            }
-            
-            time.sleep(0.05)
-            res_stock = requests.get(stock_url, headers=stock_headers, params=stock_params)
-            stock_data = res_stock.json()
-            
-            if stock_data.get('rt_cd') == '0':
-                output2 = stock_data.get('output2', [])
-                codes = [item['jong_code'].strip() for item in output2 if 'jong_code' in item]
-                print(f"✅ 최종 {len(codes)}개 종목 로드 완료: {codes}")
-                return codes
-            else:
-                print(f"❌ 종목 리스트 조회 실패: {stock_data.get('msg1')}")
-                return []
-
-        except Exception as e:
-            print(f"❌ 관심종목 연동 중 오류 발생: {e}")
-            return []
-
-    def get_my_interests_with_names(self):
-        """
-        [종목명 포함 버전] 한투 API 문서 기준 관심종목 조회 2단계 로직
-        반환값: {"005930": "삼성전자", "000660": "SK하이닉스", ...}
-        """
-        # --- [준비 단계] ---
-        self.auth()
-        
-        # --- [1단계: 관심종목 그룹 조회 (HHKCM113004C7)] ---
-        group_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-grouplist"
-        group_params = {
-            "TYPE": "1",
-            "FID_ETC_CLS_CODE": "00",
-            "USER_ID": self.hts_id
-        }
-        group_headers = {
-            "content-type": "application/json",
-            "authorization": f"Bearer {self.access_token}",
-            "appKey": self.app_key,
-            "appSecret": self.app_secret,
-            "tr_id": "HHKCM113004C7",
-            "custtype": "P"
-        }
-        
-        try:
-            time.sleep(0.05)
-            res_group = requests.get(group_url, headers=group_headers, params=group_params)
-            group_data = res_group.json()
-            
-            groups = group_data.get('output2', [])
-            if not groups:
-                print("⚠️ 등록된 관심종목 그룹이 없습니다.")
-                return {}
-            
-            target_group_code = groups[0].get('inter_grp_code', '000')
-            print(f"📂 관심그룹 포착: {groups[0].get('inter_grp_name')} ({target_group_code})")
-
-            # --- [2단계: 그룹별 종목 조회 (HHKCM113004C6)] ---
-            stock_url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/intstock-stocklist-by-group"
-            stock_params = {
-                "TYPE": "1",
-                "USER_ID": self.hts_id,
-                "DATA_RANK": "",
-                "INTER_GRP_CODE": target_group_code,
-                "INTER_GRP_NAME": "",
-                "HTS_KOR_ISNM": "",
-                "CNTG_CLS_CODE": "",
+                "TYPE": "1", 
+                "USER_ID": self.hts_id, 
+                "DATA_RANK": "",            # 필수 (에러 발생 지점)
+                "INTER_GRP_CODE": target_group_code, 
+                "INTER_GRP_NAME": "",       # 필수
+                "HTS_KOR_ISNM": "",        # 필수
+                "CNTG_CLS_CODE": "",       # 필수
                 "FID_ETC_CLS_CODE": "4" 
             }
-            stock_headers = {
-                "content-type": "application/json",
-                "authorization": f"Bearer {self.access_token}",
-                "appKey": self.app_key,
-                "appSecret": self.app_secret,
-                "tr_id": "HHKCM113004C6",
-                "custtype": "P"
-            }
+            stock_headers = {**group_headers, "tr_id": "HHKCM113004C6"}
             
             time.sleep(0.05)
             res_stock = requests.get(stock_url, headers=stock_headers, params=stock_params)
@@ -413,22 +316,18 @@ class KISApiHelper:
             
             if stock_data.get('rt_cd') == '0':
                 output2 = stock_data.get('output2', [])
-                
-                # --- [수정 포인트: 코드와 종목명을 딕셔너리로 저장] ---
-                # key: 종목코드, value: 종목명
-                interest_dict = {
+                # 기존 sc_trader.py가 기대하는 {코드: 이름} 딕셔너리 구조 생성
+                interest_map = {
                     item['jong_code'].strip(): item.get('hts_kor_isnm', '').strip() 
                     for item in output2 if 'jong_code' in item
                 }
-                
-                print(f"✅ 최종 {len(interest_dict)}개 종목 로드 완료")
-                return interest_dict
+                print(f"✅ 최종 {len(interest_map)}개 종목 로드 완료")
+                return interest_map
             else:
-                print(f"❌ 종목 리스트 조회 실패: {stock_data.get('msg1')}")
+                print(f"❌ 종목 조회 실패: {stock_data.get('msg1')}")
                 return {}
-
         except Exception as e:
-            print(f"❌ 관심종목 연동 중 오류 발생: {e}")
+            print(f"❌ 예외 발생: {e}")
             return {}
-        
+
 kis = KISApiHelper()
