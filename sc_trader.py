@@ -94,9 +94,9 @@ async def main():
         uri = "ws://localhost:8080/ws/publish"
 
         # 한투 가이드 실제 샘플 문자열
-        raw_data = "0|H0STCNT0|001|000660^132848^93000^2^500^0.54^92646.96^92700^93300^92400^93100^93000^1^1058687^98084114400^11039^8523^-2516^89.44^547838^489995^5^0.47^40.42^090017^2^300^124625^5^-300^091329^2^600^20220830^20^N^13588^10258^77418^117103^0.15^1785780^59.28^0^^92700"
-        print(f"DEBUG: parse_data -  {parse_data(raw_data)} 수신")
-        await on_tick_received(parse_data(raw_data))
+        # raw_data = "0|H0STCNT0|001|000660^132848^93000^2^500^0.54^92646.96^92700^93300^92400^93100^93000^1^1058687^98084114400^11039^8523^-2516^89.44^547838^489995^5^0.47^40.42^090017^2^300^124625^5^-300^091329^2^600^20220830^20^N^13588^10258^77418^117103^0.15^1785780^59.28^0^^92700"
+        # print(f"DEBUG: parse_data -  {parse_data(raw_data)} 수신")
+        # await on_tick_received(parse_data(raw_data))
 
         while True:
             try:
@@ -104,21 +104,17 @@ async def main():
                     print("✅ Broadcaster 연결 성공")
 
                     await ws.send(json.dumps(init_packet))
-                    try:
-                        await ws.send(json.dumps(init_packet))
-                        print(f"📢 [INIT] 전송 완료 (종목: {len(initial_data)}개)")
-                    except Exception as e:
-                        print(f"❌ INIT 전송 중 끊김 발생: {e}")
-                        raise e # 상위 try로 던져서 재연결 유도
+                    print(f"📢 [INIT] 전송 완료 (종목: {len(initial_data)}개)")
                     
                     while True:
+                        # 큐에서 가공된 데이터(TICK/HOKA)를 가져와 전송
                         msg = await queue.get()
                         try:
                             await ws.send(json.dumps(msg))
                             queue.task_done()
                         except Exception as e:
                             print(f"❌ 데이터 전송 중 에러: {e}")
-                            # 실패한 데이터는 큐에서 버리지 않거나 다시 넣어야 할 수 있음
+                            # 재연결을 위해 raise
                             raise e
             except Exception as e:
                 print(f"⚠️ Sender 연결 오류 (재시도 중...): {e}")

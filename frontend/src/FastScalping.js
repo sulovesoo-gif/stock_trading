@@ -8,8 +8,8 @@ const FastScalping = () => {
 
     useEffect(() => {
         // [설정] OCI 서버의 Broadcaster 연결
-        // ws.current = new WebSocket(`ws://168.107.5.155:8080/ws/scalping`);
-        ws.current = new WebSocket(`ws://localhost:8080/ws/scalping`);
+        ws.current = new WebSocket(`ws://168.107.5.155:8080/ws/scalping`);
+        // ws.current = new WebSocket(`ws://localhost:8080/ws/scalping`);
         
         ws.current.onopen = () => setIsConnected(true);
         ws.current.onclose = () => setIsConnected(false);
