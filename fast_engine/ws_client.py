@@ -5,12 +5,15 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64decode
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from core.api_helper import kis
+
+KST = ZoneInfo("Asia/Seoul")
 
 class KISWebsocketClient:
     def __init__(self):
@@ -19,7 +22,7 @@ class KISWebsocketClient:
         self.aes_key = None
         self.aes_iv = None
         # 가이드 반영: 원본 데이터 검증을 위한 로그 파일
-        self.log_file = f"ws_raw_{datetime.now().strftime('%Y%m%d')}.log"
+        self.log_file = f"ws_raw_{datetime.now(KST).strftime('%Y%m%d')}.log"
 
     async def connect(self, callback):
         stock_map = kis.get_my_interests()
@@ -70,6 +73,7 @@ class KISWebsocketClient:
                         
                         if tr_id == "PINGPONG":
                             await websocket.pong(raw_data)
+                            print("💓 [PINGPONG] 응답 전송 완료")
                         else:
                             body = msg_json.get("body", {})
                             if body.get("rt_cd") == '0':

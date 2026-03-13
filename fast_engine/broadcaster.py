@@ -10,18 +10,25 @@ app = FastAPI()
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections = []
+        self.last_init = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
         print(f"[+] 리액트 대시보드 연결됨 (총: {len(self.active_connections)}개)")
+        if self.last_init:
+            await websocket.send_text(json.dumps(self.last_init))
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        if message.get("type") == "INIT":
+            self.last_init = message
+        if not self.active_connections:
+            return
         if not self.active_connections: return
         data = json.dumps(message)
         for connection in self.active_connections[:]:

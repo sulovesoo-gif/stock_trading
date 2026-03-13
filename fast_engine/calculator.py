@@ -35,15 +35,26 @@ class FastScalpingCalculator:
             }
         else:
             status['curr_price'] = data['price']
+            status['prev_strength'] = status['strength']
             status['strength'] = data.get('strength', status['strength'])
             status['rate'] = data.get('rate', status['rate']) # <--- 2. 체결 데이터에서 rate 추출
             now = time.time()
             status['ticks'].append({'t': now, 'v': data['volume'], 'side': data['side']})
+            # [교정] 기준가를 바탕으로 실제 VI 발동 가격 계산
+            if data.get('vi_standard'):
+                base = data['vi_standard']
+                status['vi_up'] = int(base * 1.10)   # 상방 10%
+                status['vi_down'] = int(base * 0.90) # 하방 10%
+                status['vi_standard'] = base
+            
         
         # 4. 초당 체결 속도(Tick Speed) 계산
         # 최근 5초 내에 발생한 틱의 개수를 계산하여 수급 폭발 확인
         recent_ticks = [t for t in status['ticks'] if now - t['t'] < self.window_seconds]
         status['tick_speed'] = len(recent_ticks) / self.window_seconds
+
+        # [추가] 급증 알림 플래그 (초당 5건 이상일 때)
+        status['is_speeding'] = status['tick_speed'] >= 5.0
 
         # 5. 실시간 VWAP 근사치 계산 (단타 지지/저항선 활용)
         # 당일 누적 거래량과 대금을 활용 (정확한 계산을 위해선 초기 누적치가 필요하나 실시간 증분으로 유지)
@@ -63,10 +74,14 @@ class FastScalpingCalculator:
             "code": code,
             "price": s['curr_price'],
             "strength": s['strength'],
+            "prev_strength": s['prev_strength'],
             "speed": round(s['tick_speed'], 2),
             "vwap": round(s['vwap'], 0),
             "rate": s['rate'], # <--- 3. 프론트로 보낼 데이터에 포함
             "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL",
+            "vi_up": s['vi_up'],      # 실제 상방 발동가
+            "vi_down": s['vi_down'],  # 실제 하방 발동가
+            "vi_distance": round(((s['vi_up'] - s['curr_price']) / s['curr_price'] * 100), 2) if s['vi_up'] else 0,
             "hoka": s['hoka']
         }
 

@@ -11,6 +11,8 @@ def parse_domestic_tick(raw_str):
             "rate": float(fields[5]),
             "volume": int(fields[12]),
             "strength": float(fields[15]),
+            "side": fields[21],
+            "vi_standard": int(fields[45]) if fields[45] else 0, # [추가] 정적VI발동기준가
             "market": "KR"
         }
     except: return None

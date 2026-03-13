@@ -8,8 +8,8 @@ const FastScalping = () => {
 
     useEffect(() => {
         // [설정] OCI 서버의 Broadcaster 연결
-        ws.current = new WebSocket(`ws://168.107.5.155:8080/ws/scalping`);
-        // ws.current = new WebSocket(`ws://localhost:8080/ws/scalping`);
+        // ws.current = new WebSocket(`ws://168.107.5.155:8080/ws/scalping`);
+        ws.current = new WebSocket(`ws://localhost:8080/ws/scalping`);
         
         ws.current.onopen = () => setIsConnected(true);
         ws.current.onclose = () => setIsConnected(false);
@@ -21,28 +21,62 @@ const FastScalping = () => {
             if (data.type === "INIT") {
                 const initial = {};
                 data.stocks.forEach(s => {
-                    initial[s.code] = { 
-                        code: s.code, name: s.name, price: 0, speed: 0, strength: 0, updated: 0, hoka: null 
+                    initial[s.code] = {
+                        code: s.code,
+                        name: s.name,
+                        price: s.price,
+                        change: s.change,
+                        rate: s.rate,
+                        volume: s.volume,
+                        speed: 0,
+                        strength: 0,
+                        updated: Date.now(),
+                        hoka: null
                     };
                 });
                 setRealtimeData(initial);
                 return;
             }
 
-            // 2. 실시간 체결 리스트 업데이트 (오늘 버전 핵심)
-            if (data.price > 0) {
-                setTrades(prev => [data, ...prev].slice(0, 30));
+            // 2. 실시간 체결(TICK) 데이터 처리
+            if (data.type === "TICK") {
+                // 우측 타임라인 업데이트
+                setTrades(prev => [{
+                    name: data.name,
+                    price: data.price,
+                    rate: data.rate,
+                    time: new Date().toLocaleTimeString()
+                }, ...prev].slice(0, 30));
+
+                // 좌측 종목 카드 업데이트
+                setRealtimeData(prev => ({
+                    ...prev,
+                    [data.code]: { 
+                        ...prev[data.code],
+                        price: data.price,
+                        rate: data.rate,
+                        speed: data.speed,
+                        strength: data.strength,
+                        prev_strength: data.prev_strength, // [추가] 추세 비교용
+                        vi_up: data.vi_up,                 // [추가] 상방 VI 가격
+                        vi_distance: data.vi_distance,     // [추가] VI까지 거리
+                        vwap: data.vwap,
+                        updated: Date.now() 
+                    }
+                }));
             }
 
-            // 3. 종목별 카드 데이터 업데이트 (어제 버전 핵심)
-            setRealtimeData(prev => ({
-                ...prev,
-                [data.code]: { 
-                    ...prev[data.code],
-                    ...data, 
-                    updated: Date.now() 
-                }
-            }));
+            // 3. 호가(HOKA) 데이터 처리
+            if (data.type === "HOKA") {
+                setRealtimeData(prev => ({
+                    ...prev,
+                    [data.code]: { 
+                        ...prev[data.code],
+                        hoka: data,
+                        updated: Date.now() 
+                    }
+                }));
+            }
         };
 
         return () => ws.current?.close();
@@ -79,20 +113,43 @@ const FastScalping = () => {
                 <div style={styles.cardGrid}>
                     {Object.values(realtimeData).sort((a, b) => b.speed - a.speed).map((stock) => {
                         const isHot = Date.now() - stock.updated < 300;
+                        const strengthColor = stock.strength > stock.prev_strength ? '#FF5252' : 
+                                              stock.strength < stock.prev_strength ? '#448AFF' : '#FFFFFF';
                         return (
                             <div key={stock.code} style={styles.stockCard(isHot)}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                                     <span style={{ fontWeight: 'bold', color: '#FFD700' }}>{stock.name}</span>
-                                    <span style={{ fontSize: '10px', color: '#888' }}>{stock.speed?.toFixed(1)} T/S</span>
+                                    {/* <span style={{ fontSize: '10px', color: '#888' }}>{stock.speed?.toFixed(1)} T/S</span> */}
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{ fontSize: '10px', color: '#888' }}>{stock.speed?.toFixed(1)} T/S</div>
+                                        {/* VWAP 출력 추가 */}
+                                        <div style={{ fontSize: '10px', color: '#00FF00' }}>VWAP: {stock.vwap?.toLocaleString()}</div>
+                                    </div>
                                 </div>
                                 <div style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'center', marginBottom: '10px' }}>
                                     {stock.price?.toLocaleString()}
                                 </div>
                                 {/* 체결강도 게이지 */}
-                                <div style={{ fontSize: '10px', marginBottom: '3px' }}>체결강도 {stock.strength?.toFixed(1)}%</div>
-                                <div style={{ width: '100%', height: '4px', background: '#333', borderRadius: '2px', marginBottom: '10px' }}>
-                                    <div style={styles.gaugeBar(stock.strength / 2, stock.strength >= 100 ? '#FF5252' : '#448AFF')} />
+                                <div style={{ fontSize: '10px', marginBottom: '3px' }}>
+                                    체결강도 <span style={{ color: strengthColor, fontWeight: 'bold' }}>
+                                        {stock.strength?.toFixed(1)}% 
+                                        {stock.strength > stock.prev_strength ? ' ▲' : stock.strength < stock.prev_strength ? ' ▼' : ''}
+                                    </span>
                                 </div>
+                                <div style={{ width: '100%', height: '4px', background: '#333', borderRadius: '2px', marginBottom: '10px' }}>
+                                    <div style={styles.gaugeBar(stock.strength / 2, strengthColor)} />
+                                </div>
+                                {/* [추가] VI 정보 표시 섹션 */}
+                                {stock.vi_up > 0 && (
+                                    <div style={{ marginTop: '8px', padding: '5px', background: '#222', borderRadius: '4px', fontSize: '11px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ color: '#FFA500' }}>VI 예상: {stock.vi_up.toLocaleString()}</span>
+                                            <span style={{ color: stock.vi_distance < 1.5 ? '#FF5252' : '#888' }}>
+                                                D-Line: {stock.vi_distance}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
                                 {/* 호가 비중 */}
                                 {stock.hoka && (
                                     <div style={{ display: 'flex', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
