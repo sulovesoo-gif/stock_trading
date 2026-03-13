@@ -57,7 +57,6 @@ async def main():
         print("❌ 실행 중단: 종목을 가져오지 못했습니다.")
         return
 
-    print(f"stock_map: {stock_map}")
     # 2. 초기 데이터 및 INIT 패킷 생성
     initial_data = await get_initial_stock_data(stock_map)
     init_packet = {"type": "INIT", "stocks": initial_data}
