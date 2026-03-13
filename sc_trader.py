@@ -61,7 +61,6 @@ async def main():
     initial_data = await get_initial_stock_data(stock_map)
     init_packet = {"type": "INIT", "stocks": initial_data}
     
-    print(f"initial_data: {initial_data}")
     client = KISWebsocketClient()
     calc = FastScalpingCalculator()
     queue = asyncio.Queue()
