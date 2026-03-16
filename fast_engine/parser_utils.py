@@ -10,23 +10,25 @@ def parse_domestic_tick(raw_str):
             "change": int(fields[4]),
             "rate": float(fields[5]),
             "volume": int(fields[12]),
-            "strength": float(fields[15]),
+            "strength": float(fields[18]),
             "side": fields[21],
             "vi_standard": int(fields[45]) if fields[45] else 0, # [추가] 정적VI발동기준가
             "market": "KR"
         }
     except: return None
 
-def parse_domestic_orderbook(raw_str):
+def parse_domestic_hoka(raw_str):
     """[국내주식] 실시간 호가 파싱 (H0STASP0)"""
     try:
         parts = raw_str.split('|')
         fields = parts[3].split('^')
         return {
-            "type": "ORDERBOOK",
+            "type": "HOKA",
             "code": fields[0],
-            "bid": fields[3], "ask": fields[23],
-            "bid_vol": fields[13], "ask_vol": fields[33],
+            "ask": fields[3],
+            "ask_vol": fields[13],
+            "bid": fields[23], 
+            "bid_vol": fields[33], 
             "market": "KR"
         }
     except: return None
@@ -47,22 +49,39 @@ def parse_overseas_tick(raw_str):
         }
     except: return None
 
-def parse_overseas_orderbook(raw_str):
+def parse_overseas_hoka(raw_str):
     """[해외주식] 실시간 호가 파싱 (HDFSASP0)"""
     try:
         parts = raw_str.split('|')
         fields = parts[3].split('^')
         return {
-            "type": "ORDERBOOK",
+            "type": "HOKA",
             "code": fields[1],
             "bid": fields[11], "ask": fields[12],
             "market": "US"
         }
     except: return None
 
+def parse_futures_tick(raw_str):
+    """[지수선물] 실시간 체결가 파싱 (H0IFCNT0)"""
+    try:
+        parts = raw_str.split('|')
+        fields = parts[3].split('^')
+        return {
+            "type": "FUTURES_TICK",
+            "code": fields[0],           # 0: 종목코드
+            "price": float(fields[5]),   # 5: 현재가 (FTRS_PRPR)
+            "change": float(fields[2]),  # 2: 전일대비 (PRDY_VRSS)
+            "rate": float(fields[4]),    # 4: 대비율 (FTRS_PRDY_CTRT)
+            "volume": int(fields[9]),    # 9: 최종 체결량 (LAST_CNQN)
+            "market": "KR_FUT"
+        }
+    except: return None
+    
 def parse_data(message):
     if 'H0STCNT0' in message: return parse_domestic_tick(message)
-    if 'H0STASP0' in message: return parse_domestic_orderbook(message)
+    if 'H0STASP0' in message: return parse_domestic_hoka(message)
     if 'HDFSCNT0' in message: return parse_overseas_tick(message)
-    if 'HDFSASP0' in message: return parse_overseas_orderbook(message)
+    if 'HDFSASP0' in message: return parse_overseas_hoka(message)
+    if "H0IFCNT0" in message: return parse_futures_tick(message)
     return None

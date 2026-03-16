@@ -45,16 +45,12 @@ class KISWebsocketClient:
                 # print(f"📡 [WS] 구독 전송2: {code} (H0STASP0)")
                 await asyncio.sleep(0.1)
 
-            # 2. [추가] 실시간 체결통보 구독 (장외 테스트용)
-            sub_msg_cni = json.dumps({
-                "header": {
-                    "approval_key": self.approval_key,
-                    "custtype": "P", "tr_type": "1", "content-type": "utf-8"
-                },
-                "body": {"input": {"tr_id": "H0STCNI0", "tr_key": kis.hts_id}}
-            })
-            await websocket.send(sub_msg_cni)
+            # 2. 실시간 체결통보 구독 (장외 테스트용)
+            await websocket.send(self._make_sub_msg(kis.hts_id, "H0STCNI0"))
+            # 3. 코스피200 선물(10100) 구독 전송
             # print(f"🔔 실시간 체결통보 구독 요청 완료 (ID: {kis.hts_id})")
+            await websocket.send(self._make_sub_msg("10100", "H0IFCNT0"))
+            # print(f"🚀 [WS] 선물 구독 완료: {"10100"}")
 
             while True:
                 try:
@@ -71,6 +67,8 @@ class KISWebsocketClient:
                         print(f"📍 현재 로그 기록 중: {os.path.abspath(self.log_file)}")
                         self._path_printed = True
                     
+                    # print(f"💓 {raw_data}")
+
                     if raw_data[0] in ['0', '1']:
                         asyncio.create_task(self.parse_and_relay(raw_data, callback))
                     else:
@@ -109,35 +107,15 @@ class KISWebsocketClient:
 
         encrypt_yn, tr_id, data_cnt, data_body = parts[0], parts[1], int(parts[2]), parts[3]
 
+        # 암호화 여부 확인 ('1'이면 암호화됨)
         if encrypt_yn == '1':
             data_body = self.decrypt_data(data_body)
             if not data_body: return
 
-        all_fields = data_body.split('^')
+        # [핵심 수정]: 하드코딩된 인덱스 로직을 모두 지우고 reassembled_data를 생성
+        reassembled_data = f"0|{tr_id}|{data_cnt}|{data_body}"
+        # 공용 파서 호출 (사용자님이 수정한 18번 인덱스 로직이 여기서 적용됨)
+        payload = parse_data(reassembled_data)
 
-        if tr_id == "H0STCNT0":
-            fields_per_row = 46 
-            for i in range(data_cnt):
-                offset = i * fields_per_row
-                if len(all_fields) < offset + fields_per_row: continue
-                tick = {
-                    "type": "TICK", # 타입 명시
-                    "time": all_fields[offset + 1],
-                    "code": all_fields[offset + 0],
-                    "price": int(all_fields[offset + 2]),
-                    "change": int(all_fields[offset + 4]),
-                    "rate": float(all_fields[offset + 5]),
-                    "volume": int(all_fields[offset + 12]),
-                    "strength": float(all_fields[offset + 19]) if all_fields[offset+19] else 0.0,
-                    "side": all_fields[offset + 21]
-                }
-                await callback(tick)
-
-        elif tr_id == "H0STASP0":
-            hoka = {
-                "type": "HOKA", "code": all_fields[0], "time": all_fields[1],
-                "ask": [{"p": all_fields[i], "v": all_fields[i+20]} for i in range(3, 13)],
-                "bid": [{"p": all_fields[i], "v": all_fields[i+20]} for i in range(13, 23)],
-                "total_ask_v": all_fields[43], "total_bid_v": all_fields[44]
-            }
-            await callback(hoka)
+        if payload:
+            await callback(payload)

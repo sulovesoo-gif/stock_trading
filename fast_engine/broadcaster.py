@@ -73,7 +73,7 @@ async def publish_endpoint(websocket: WebSocket):
                 except: continue
 
             # 2. 실시간 데이터 (통합 파서 사용)
-            # 국내/해외 체결(TICK), 호가(ORDERBOOK)를 모두 처리
+            # 국내/해외 체결(TICK), 호가(HOKA)를 모두 처리
             else:
                 payload = parse_data(raw_data)
                 if payload:
