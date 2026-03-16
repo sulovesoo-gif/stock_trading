@@ -41,7 +41,6 @@ manager = ConnectionManager()
 
 @app.websocket("/ws/scalping")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
     await manager.connect(websocket)
     try:
         while True:
