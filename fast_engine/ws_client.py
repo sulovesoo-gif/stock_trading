@@ -61,9 +61,15 @@ class KISWebsocketClient:
                     raw_data = await websocket.recv()
                     # 수신 확인을 위해 원본 데이터 바로 출력
                     # print(f"📥 RAW 수신: {raw_data}")
-                    
+
+                    # [추가] 원본 데이터 로그 기록 로직
                     with open(self.log_file, "a", encoding="utf-8") as f:
-                        f.write(f"{raw_data}\n")
+                        f.write(f"[{datetime.now(KST)}] {raw_data}\n")
+                    
+                    # [추가] 파일이 어디에 써지고 있는지 딱 한 번만 출력 (확인용)
+                    if not hasattr(self, '_path_printed'):
+                        print(f"📍 현재 로그 기록 중: {os.path.abspath(self.log_file)}")
+                        self._path_printed = True
                     
                     if raw_data[0] in ['0', '1']:
                         asyncio.create_task(self.parse_and_relay(raw_data, callback))
