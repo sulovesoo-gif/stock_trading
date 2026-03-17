@@ -22,6 +22,9 @@ class FastScalpingCalculator:
                 'vwap': 0.0,
                 'total_amt': 0,
                 'rate': 0.0, # <--- 1. 등락율 저장소 추가
+                'vi_up': 0,        # [수정] 초기값 설정
+                'vi_down': 0,      # [수정] 초기값 설정
+                'vi_standard': 0,  # [수정] 초기값 설정
                 'hoka': None
             }
 
@@ -69,20 +72,33 @@ class FastScalpingCalculator:
         """프론트엔드로 보낼 핵심 요약 데이터 반환"""
         s = self.stock_status.get(code)
         if not s: return None
+
+        # 호가 잔량 비율 계산 (이미지 인덱스 23번, 33번 기반 데이터 활용)
+        hoka_ratio = 0
+        if s.get('hoka'):
+            try:
+                # parser_utils.py에서 넘어온 실시간 호가 잔량
+                ask_v = int(s['hoka'].get('ask_vol', 0))
+                bid_v = int(s['hoka'].get('bid_vol', 0))
+                if (ask_v + bid_v) > 0:
+                    # 매수잔량이 많을수록(비율이 높을수록) 하단 지지가 강함을 의미
+                    hoka_ratio = round((bid_v / (ask_v + bid_v)) * 100, 1)
+            except: pass
         
         return {
             "code": code,
-            "price": s['curr_price'],
-            "strength": s['strength'],
-            "prev_strength": s['prev_strength'],
-            "speed": round(s['tick_speed'], 2),
-            "vwap": round(s['vwap'], 0),
-            "rate": s['rate'], # <--- 3. 프론트로 보낼 데이터에 포함
-            "signal": "HOT" if s['tick_speed'] > 5 else "NORMAL",
-            "vi_up": s['vi_up'],      # 실제 상방 발동가
-            "vi_down": s['vi_down'],  # 실제 하방 발동가
-            "vi_distance": round(((s['vi_up'] - s['curr_price']) / s['curr_price'] * 100), 2) if s['vi_up'] else 0,
-            "hoka": s['hoka']
+            "price": s.get('curr_price', 0),
+            "strength": s.get('strength', 0.0),
+            "prev_strength": s.get('prev_strength', 0.0),
+            "speed": round(s.get('tick_speed', 0), 2),
+            "vwap": round(s.get('vwap', 0), 0),
+            "rate": s.get('rate', 0.0),
+            "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
+            "vi_up": s.get('vi_up', 0),
+            "vi_down": s.get('vi_down', 0),
+            "vi_distance": round(((s.get('vi_up', 0) - s['curr_price']) / s['curr_price'] * 100), 2) if s.get('vi_up', 0) and s['curr_price'] > 0 else 0,
+            "hoka_ratio": hoka_ratio, # 매수잔량 비중 (%)
+            "hoka": s.get('hoka')
         }
 
 # 테스트 코드

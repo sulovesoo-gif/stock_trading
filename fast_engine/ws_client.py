@@ -9,6 +9,10 @@ from zoneinfo import ZoneInfo
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64decode
+try:
+    from fast_engine.parser_utils import parse_data
+except ModuleNotFoundError:
+    from parser_utils import parse_data
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from core.api_helper import kis
@@ -38,10 +42,12 @@ class KISWebsocketClient:
         async with websockets.connect(self.url, ping_interval=60) as websocket:
             # print("✅ [WS] 서버 핸드쉐이크 완료. 1초 대기 후 구독 시작...")
             for code in interest_codes:
-                # 체결(H0STCNT0) 및 호가(H0STASP0) 구독
-                await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
-                # print(f"📡 [WS] 구독 전송: {code} (H0STCNT0)")
-                await websocket.send(self._make_sub_msg(code, "H0STASP0"))
+                # 체결통합(H0UNASP0), 체결KRX(H0STCNT0) 및 호가통합(H0UNASP0),  호가KRX(H0STASP0) 구독
+                # await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
+                await websocket.send(self._make_sub_msg(code, "H0UNCNT0"))
+                # await websocket.send(self._make_sub_msg(code, "H0STASP0"))
+                await websocket.send(self._make_sub_msg(code, "H0UNASP0"))
+                
                 # print(f"📡 [WS] 구독 전송2: {code} (H0STASP0)")
                 await asyncio.sleep(0.1)
 
@@ -77,7 +83,7 @@ class KISWebsocketClient:
                         
                         if tr_id == "PINGPONG":
                             await websocket.pong(raw_data)
-                            print("💓 [PINGPONG] 응답 전송 완료")
+                            # print("💓 [PINGPONG] 응답 전송 완료")
                         else:
                             body = msg_json.get("body", {})
                             if body.get("rt_cd") == '0':

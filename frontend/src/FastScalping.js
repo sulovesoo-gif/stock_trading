@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 const FastScalping = () => {
     const [realtimeData, setRealtimeData] = useState({}); // 종목별 카드 데이터
     const [trades, setTrades] = useState([]); // 전체 실시간 체결 리스트
+    const [futures, setFutures] = useState(null); // [추가] 선물 데이터 상태
     const [isConnected, setIsConnected] = useState(false);
     const ws = useRef(null);
 
@@ -17,70 +18,38 @@ const FastScalping = () => {
         ws.current.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
-            // 1. 초기화 데이터 처리
-            if (data.type === "INIT") {
-                const initial = {};
-                data.stocks.forEach(s => {
-                    initial[s.code] = {
-                        code: s.code,
-                        name: s.name,
-                        price: s.price,
-                        change: s.change,
-                        rate: s.rate,
-                        volume: s.volume,
-                        speed: 0,
-                        strength: 0,
-                        updated: Date.now(),
-                        hoka: null
-                    };
-                });
-                setRealtimeData(initial);
+            // 1. 선물 데이터 처리 (H0IFCNT0)
+            if (data.type === "FUTURES_TICK") {
+                setFutures(data);
                 return;
             }
 
-            // 2. 실시간 체결(TICK) 데이터 처리
-            if (data.type === "TICK") {
-                // 우측 타임라인 업데이트
-                setTrades(prev => [{
-                    name: data.name,
-                    price: data.price,
-                    rate: data.rate,
-                    time: new Date().toLocaleTimeString()
-                }, ...prev].slice(0, 30));
-
-                // 좌측 종목 카드 업데이트
+            // 2. 초기화 및 체결 데이터 처리 (기존 로직 유지)
+            if (data.type === "INIT") {
+                const initial = {};
+                data.stocks.forEach(s => {
+                    initial[s.code] = { ...s, speed: 0, strength: 0, hoka_ratio: 50, vi_distance: 0 };
+                });
+                setRealtimeData(initial);
+            } // 3. 체결(TICK) 및 [복구] 호가(HOKA) 통합 업데이트
+            else if (data.type === "TICK" || data.type === "HOKA") {
                 setRealtimeData(prev => ({
                     ...prev,
-                    [data.code]: { 
-                        ...prev[data.code],
-                        price: data.price,
-                        rate: data.rate,
-                        speed: data.speed,
-                        strength: data.strength,
-                        prev_strength: data.prev_strength, // [추가] 추세 비교용
-                        vi_up: data.vi_up,                 // [추가] 상방 VI 가격
-                        vi_distance: data.vi_distance,     // [추가] VI까지 거리
-                        vwap: data.vwap,
-                        updated: Date.now() 
-                    }
+                    [data.code]: { ...prev[data.code], ...data }
                 }));
-            }
 
-            // 3. 호가(HOKA) 데이터 처리
-            if (data.type === "HOKA") {
-                setRealtimeData(prev => ({
-                    ...prev,
-                    [data.code]: { 
-                        ...prev[data.code],
-                        hoka: data,
-                        updated: Date.now() 
-                    }
-                }));
+                // TICK일 때만 타임라인 업데이트
+                if (data.type === "TICK") {
+                    setTrades(prev => [{ 
+                        name: realtimeData[data.code]?.name || data.code, 
+                        ...data 
+                    }, ...prev].slice(0, 50));
+                }
             }
         };
 
         return () => ws.current?.close();
-    }, []);
+    }, [realtimeData]);
 
     const styles = {
         container: { padding: '20px', backgroundColor: '#000', minHeight: '100vh', color: 'white', fontFamily: 'monospace' },
@@ -100,66 +69,72 @@ const FastScalping = () => {
     };
 
     return (
-        <div style={styles.container}>
-            <header style={styles.header}>
-                <h2 style={{ margin: 0, color: '#FF5252' }}>⚡ 통합 실시간 스캘핑 시스템</h2>
-                <div style={{ fontSize: '12px' }}>
-                    STATUS: <span style={{ color: isConnected ? '#4CAF50' : '#FF5252' }}>{isConnected ? "● LIVE" : "○ OFFLINE"}</span>
-                </div>
-            </header>
+        <div style={{ backgroundColor: '#000', color: '#fff', minHeight: '100vh', padding: '20px' }}>
+            {/* [추가] 상단 선물 전광판 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+                <h2 style={{ margin: 0 }}>⚡ 실시간 스캘핑 시스템</h2>
+                {futures && (
+                    <div style={{ display: 'flex', gap: '15px', alignItems: 'center', backgroundColor: '#111', padding: '5px 15px', borderRadius: '5px', border: '1px solid #f1c40f' }}>
+                        <span style={{ color: '#f1c40f', fontSize: '12px', fontWeight: 'bold' }}>KOSPI200 선물</span>
+                        <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{futures.price}</span>
+                        <span style={{ color: futures.rate > 0 ? '#ff5252' : '#448aff' }}>
+                            {futures.rate > 0 ? '▲' : '▼'} {Math.abs(futures.rate)}%
+                        </span>
+                    </div>
+                )}
+                <div style={{ color: isConnected ? '#4CAF50' : '#FF5252' }}>{isConnected ? '● Connected' : '○ Disconnected'}</div>
+            </div>
 
-            <div style={styles.mainGrid}>
-                {/* 왼쪽: 종목별 수급 카드 (어제 버전 + 게이지) */}
-                <div style={styles.cardGrid}>
-                    {Object.values(realtimeData).sort((a, b) => b.speed - a.speed).map((stock) => {
-                        const isHot = Date.now() - stock.updated < 300;
-                        const strengthColor = stock.strength > stock.prev_strength ? '#FF5252' : 
-                                              stock.strength < stock.prev_strength ? '#448AFF' : '#FFFFFF';
+            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '20px' }}>
+                {/* 종목 카드 리스트 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+                    {Object.values(realtimeData).map(s => {
+                        // 1. 여기서 색상을 먼저 계산합니다.
+                        const priceColor = s.rate > 0 ? '#ff5252' : s.rate < 0 ? '#448aff' : '#ffffff';
+                        // 2. 이제 계산된 변수를 가지고 JSX를 반환합니다.
                         return (
-                            <div key={stock.code} style={styles.stockCard(isHot)}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                    <span style={{ fontWeight: 'bold', color: '#FFD700' }}>{stock.name}</span>
-                                    {/* <span style={{ fontSize: '10px', color: '#888' }}>{stock.speed?.toFixed(1)} T/S</span> */}
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '10px', color: '#888' }}>{stock.speed?.toFixed(1)} T/S</div>
-                                        {/* VWAP 출력 추가 */}
-                                        <div style={{ fontSize: '10px', color: '#00FF00' }}>VWAP: {stock.vwap?.toLocaleString()}</div>
-                                    </div>
+                            <div key={s.code} style={{ 
+                                backgroundColor: '#111', padding: '15px', borderRadius: '12px', 
+                                border: `2px solid ${s.speed > 5 ? '#ff5252' : '#222'}`,
+                                boxShadow: s.speed > 5 ? '0 0 10px rgba(255,82,82,0.5)' : 'none'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.name}({s.code})</span>
+                                    <span style={{ fontSize: '10px', color: '#ff00ff' }}>VI까지 {s.vi_distance}%</span>
                                 </div>
-                                <div style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'center', marginBottom: '10px' }}>
-                                    {stock.price?.toLocaleString()}
-                                </div>
-                                {/* 체결강도 게이지 */}
-                                <div style={{ fontSize: '10px', marginBottom: '3px' }}>
-                                    체결강도 <span style={{ color: strengthColor, fontWeight: 'bold' }}>
-                                        {stock.strength?.toFixed(1)}% 
-                                        {stock.strength > stock.prev_strength ? ' ▲' : stock.strength < stock.prev_strength ? ' ▼' : ''}
+                                
+                                {/* [수정] 위에서 정의한 priceColor 적용 및 화살표 추가 */}
+                                <div style={{ 
+                                    fontSize: '24px', 
+                                    fontWeight: 'bold', 
+                                    textAlign: 'right', 
+                                    margin: '10px 0', 
+                                    color: priceColor 
+                                }}>
+                                    <span style={{ fontSize: '14px', marginRight: '5px' }}>
+                                        {s.rate > 0 ? '▲' : s.rate < 0 ? '▼' : ''}
                                     </span>
+                                    {s.price?.toLocaleString()}
                                 </div>
-                                <div style={{ width: '100%', height: '4px', background: '#333', borderRadius: '2px', marginBottom: '10px' }}>
-                                    <div style={styles.gaugeBar(stock.strength / 2, strengthColor)} />
+                                
+                                {/* 이하 에너지 바 등 기존 로직 동일 */}
+                                <div style={{ marginTop: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '3px' }}>
+                                        <span style={{ color: '#448aff' }}>매도</span>
+                                        <span style={{ color: '#ff5252' }}>매수 {s.hoka_ratio}%</span>
+                                    </div>
+                                    <div style={{ width: '100%', height: '4px', backgroundColor: '#002244', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                                        <div style={{ width: `${s.hoka_ratio}%`, height: '100%', backgroundColor: '#ff5252', transition: 'width 0.3s' }} />
+                                    </div>
                                 </div>
-                                {/* [추가] VI 정보 표시 섹션 */}
-                                {stock.vi_up > 0 && (
-                                    <div style={{ marginTop: '8px', padding: '5px', background: '#222', borderRadius: '4px', fontSize: '11px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ color: '#FFA500' }}>VI 예상: {stock.vi_up.toLocaleString()}</span>
-                                            <span style={{ color: stock.vi_distance < 1.5 ? '#FF5252' : '#888' }}>
-                                                D-Line: {stock.vi_distance}%
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-                                {/* 호가 비중 */}
-                                {stock.hoka && (
-                                    <div style={{ display: 'flex', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
-                                        <div style={{ width: `${(stock.hoka.total_ask_v / (parseInt(stock.hoka.total_ask_v) + parseInt(stock.hoka.total_bid_v))) * 100}%`, background: '#448AFF' }} />
-                                        <div style={{ width: `${(stock.hoka.total_bid_v / (parseInt(stock.hoka.total_ask_v) + parseInt(stock.hoka.total_bid_v))) * 100}%`, background: '#FF5252' }} />
-                                    </div>
-                                )}
+                                
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '12px' }}>
+                                    <span style={{ color: '#888' }}>강도: {s.strength}%</span>
+                                    <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{s.speed} T/S</span>
+                                </div>
                             </div>
                         );
-                    })}
+                    })} {/* [변경] ) 에서 } 로 변경 */}
                 </div>
 
                 {/* 오른쪽: 통합 실시간 체결 내역 (오늘 버전) */}
