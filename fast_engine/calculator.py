@@ -93,6 +93,8 @@ class FastScalpingCalculator:
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
             "rate": s.get('rate', 0.0),
+            "ask_v": s['hoka'].get('ask_vol', 0) if s.get('hoka') else 0,
+            "bid_v": s['hoka'].get('bid_vol', 0) if s.get('hoka') else 0,
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),

@@ -90,14 +90,19 @@ const FastScalping = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
                     {Object.values(realtimeData).map(s => {
                         // 1. 여기서 색상을 먼저 계산합니다.
-                        const priceColor = s.rate > 0 ? '#ff5252' : s.rate < 0 ? '#448aff' : '#ffffff';
+                        const priceColor = s.rate > 0 ? '#928989' : s.rate < 0 ? '#448aff' : '#ffffff';
                         // 2. 이제 계산된 변수를 가지고 JSX를 반환합니다.
                         return (
                             <div key={s.code} style={{ 
                                 backgroundColor: '#111', padding: '15px', borderRadius: '12px', 
-                                border: `2px solid ${s.speed > 5 ? '#ff5252' : '#222'}`,
-                                boxShadow: s.speed > 5 ? '0 0 10px rgba(255,82,82,0.5)' : 'none'
+                                border: s.speed > 5 ? '2px solid #FF5252' : '1px solid #333',
+                                boxShadow: s.speed > 5 ? '0 0 10px rgba(255,82,82,0.5)' : 'none',
                             }}>
+                                {/* 상단 1호가 잔량 수치 표시 (새로 추가한 ask_v, bid_v 활용) */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#666' }}>
+                                    <span>1호가 매도: {s.ask_v?.toLocaleString()}</span>
+                                    <span>1호가 매수: {s.bid_v?.toLocaleString()}</span>
+                                </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.name}({s.code})</span>
                                     <span style={{ fontSize: '10px', color: '#ff00ff' }}>VI까지 {s.vi_distance}%</span>
@@ -105,7 +110,7 @@ const FastScalping = () => {
                                 
                                 {/* [수정] 위에서 정의한 priceColor 적용 및 화살표 추가 */}
                                 <div style={{ 
-                                    fontSize: '24px', 
+                                    fontSize: '26px', 
                                     fontWeight: 'bold', 
                                     textAlign: 'right', 
                                     margin: '10px 0', 
@@ -118,13 +123,36 @@ const FastScalping = () => {
                                 </div>
                                 
                                 {/* 이하 에너지 바 등 기존 로직 동일 */}
-                                <div style={{ marginTop: '10px' }}>
+                                {/* <div style={{ marginTop: '10px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '3px' }}>
                                         <span style={{ color: '#448aff' }}>매도</span>
                                         <span style={{ color: '#ff5252' }}>매수 {s.hoka_ratio}%</span>
                                     </div>
                                     <div style={{ width: '100%', height: '4px', backgroundColor: '#002244', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
                                         <div style={{ width: `${s.hoka_ratio}%`, height: '100%', backgroundColor: '#ff5252', transition: 'width 0.3s' }} />
+                                    </div>
+                                </div> */}
+
+                                {/* [추가] 입체 호가 잔량 분석 (이미지 가이드 반영) */}
+                                <div style={{ marginTop: '12px', padding: '8px', backgroundColor: '#050505', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
+                                        <span style={{ color: '#448aff' }}>
+                                            <span style={{ fontSize: '9px', display: 'block', color: '#666' }}>매도잔량합</span>
+                                            {s.total_ask_v?.toLocaleString() || 0}
+                                        </span>
+                                        <span style={{ color: '#ff5252', textAlign: 'right' }}>
+                                            <span style={{ fontSize: '9px', display: 'block', color: '#666' }}>매수잔량합</span>
+                                            {s.total_bid_v?.toLocaleString() || 0}
+                                        </span>
+                                    </div>
+                                    <div style={{ width: '100%', height: '6px', backgroundColor: '#448aff', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                                        <div style={{ 
+                                            width: `${s.hoka_ratio}%`, 
+                                            height: '100%', 
+                                            backgroundColor: '#ff5252', 
+                                            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            marginLeft: 'auto' 
+                                        }} />
                                     </div>
                                 </div>
                                 
