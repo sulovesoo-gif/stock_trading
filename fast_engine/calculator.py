@@ -80,9 +80,12 @@ class FastScalpingCalculator:
                 # parser_utils.py에서 넘어온 실시간 호가 잔량
                 ask_v = int(s['hoka'].get('ask_vol', 0))
                 bid_v = int(s['hoka'].get('bid_vol', 0))
+                total_ask_v = int(s['hoka'].get('total_ask_v', 0))
+                total_bid_v = int(s['hoka'].get('total_bid_v', 0))
                 if (ask_v + bid_v) > 0:
                     # 매수잔량이 많을수록(비율이 높을수록) 하단 지지가 강함을 의미
-                    hoka_ratio = round((bid_v / (ask_v + bid_v)) * 100, 1)
+                    hoka_ratio = round((total_bid_v / (total_ask_v + total_bid_v)) * 100, 1)
+                    # hoka_ratio = round((bid_v / (ask_v + bid_v)) * 100, 1)
             except: pass
         
         return {
@@ -93,8 +96,10 @@ class FastScalpingCalculator:
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
             "rate": s.get('rate', 0.0),
-            "ask_v": s['hoka'].get('ask_vol', 0) if s.get('hoka') else 0,
-            "bid_v": s['hoka'].get('bid_vol', 0) if s.get('hoka') else 0,
+            "ask_v": ask_v,
+            "bid_v": bid_v,
+            "total_ask_v": total_ask_v,
+            "total_bid_v": total_bid_v,
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),
