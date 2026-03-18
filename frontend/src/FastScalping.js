@@ -49,7 +49,7 @@ const FastScalping = () => {
         };
 
         return () => ws.current?.close();
-    }, [realtimeData]);
+    }, []);
 
     const styles = {
         container: { padding: '20px', backgroundColor: '#000', minHeight: '100vh', color: 'white', fontFamily: 'monospace' },
