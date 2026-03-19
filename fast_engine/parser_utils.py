@@ -30,8 +30,8 @@ def parse_domestic_hoka(raw_str):
             "ask_vol": fields[23],      # 매도호가 잔량1
             "bid": fields[13],          # 매수호가1
             "bid_vol": fields[33],      # 매수호가 잔량1
-            "total_ask_v": fields[43],  # 총 매도호가 잔량
-            "total_bid_v": fields[44],  # 총 매수호가 잔량
+            "total_ask_vol": fields[43],  # 총 매도호가 잔량
+            "total_bid_vol": fields[44],  # 총 매수호가 잔량,
             "market": "KR"
         }
     except: return None

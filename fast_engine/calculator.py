@@ -34,7 +34,8 @@ class FastScalpingCalculator:
             # 호가 업데이트 로직 동일
             status['hoka'] = {
                 'ask': data['ask'], 'bid': data['bid'],
-                'total_ask_v': data['total_ask_v'], 'total_bid_v': data['total_bid_v']
+                'ask_vol': data['ask_vol'], 'bid_vol': data['bid_vol'],
+                'total_ask_vol': data['total_ask_vol'], 'total_bid_vol': data['total_bid_vol']
             }
         else:
             status['curr_price'] = data['price']
@@ -78,15 +79,24 @@ class FastScalpingCalculator:
         if s.get('hoka'):
             try:
                 # parser_utils.py에서 넘어온 실시간 호가 잔량
-                ask_v = int(s['hoka'].get('ask_vol', 0))
-                bid_v = int(s['hoka'].get('bid_vol', 0))
-                total_ask_v = int(s['hoka'].get('total_ask_v', 0))
-                total_bid_v = int(s['hoka'].get('total_bid_v', 0))
-                if (ask_v + bid_v) > 0:
-                    # 매수잔량이 많을수록(비율이 높을수록) 하단 지지가 강함을 의미
-                    hoka_ratio = round((total_bid_v / (total_ask_v + total_bid_v)) * 100, 1)
-                    # hoka_ratio = round((bid_v / (ask_v + bid_v)) * 100, 1)
-            except: pass
+                # ask = int(s['hoka'].get('ask', 0))
+                # bid = int(s['hoka'].get('bid', 0))
+                # ask_vol = int(s['hoka'].get('ask_vol', 0))
+                # bid_vol = int(s['hoka'].get('bid_vol', 0))
+                total_ask_vol = int(s['hoka'].get('total_ask_vol', 0))
+                total_bid_vol = int(s['hoka'].get('total_bid_vol', 0))
+                print(f"hoka_ratio: {total_bid_vol} : {total_bid_vol} : {float(total_ask_vol + total_bid_vol)} 수신")
+
+                print(f"hoka_ratio: {round((float(total_bid_vol) / total_sum) * 100, 1)} 수신")
+                # if (ask_vol + bid_vol) > 0:
+                total_sum = float(total_ask_vol + total_bid_vol)
+                if total_sum > 0:
+                    # 매수잔량이 많을수록(비율이 높을수록) 하단 지지가 강bid_vol을 의미
+                    hoka_ratio = round((float(total_bid_vol) / total_sum) * 100, 1)
+                    # hoka_ratio = round((bid_vol / (ask_vol + bid_vol)) * 100, 1)
+            except Exception as e:
+                print(f"Error: {e}") # 여기서 로그가 찍히는지 확인
+                pass
         
         return {
             "code": code,
@@ -96,10 +106,12 @@ class FastScalpingCalculator:
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
             "rate": s.get('rate', 0.0),
-            "ask_v": ask_v,
-            "bid_v": bid_v,
-            "total_ask_v": total_ask_v,
-            "total_bid_v": total_bid_v,
+            # "ask": s.get('ask', 0),
+            # "bid": s.get('bid', 0),
+            # "ask_vol": s.get('ask_vol', 0),
+            # "bid_vol": s.get('bid_vol', 0),
+            # "total_ask_vol": s.get('total_ask_vol', 0),
+            # "total_bid_vol": s.get('total_bid_vol', 0),
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),

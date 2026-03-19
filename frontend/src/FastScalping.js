@@ -98,10 +98,10 @@ const FastScalping = () => {
                                 border: s.speed > 5 ? '2px solid #FF5252' : '1px solid #333',
                                 boxShadow: s.speed > 5 ? '0 0 10px rgba(255,82,82,0.5)' : 'none',
                             }}>
-                                {/* 상단 1호가 잔량 수치 표시 (새로 추가한 ask_v, bid_v 활용) */}
+                                {/* 상단 1호가 잔량 수치 표시 (새로 추가한 ask_vol, bid_vol 활용) */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#666' }}>
-                                    <span>1호가 매도: {s.ask_v?.toLocaleString()}</span>
-                                    <span>1호가 매수: {s.bid_v?.toLocaleString()}</span>
+                                    <span>1호가 매도: {s.ask_vol?.toLocaleString()}</span>
+                                    <span>1호가 매수: {s.bid_vol?.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.name}({s.code})</span>
@@ -138,13 +138,14 @@ const FastScalping = () => {
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
                                         <span style={{ color: '#448aff' }}>
                                             <span style={{ fontSize: '9px', display: 'block', color: '#666' }}>매도잔량합</span>
-                                            {s.total_ask_v?.toLocaleString() || 0}
+                                            {s.total_ask_vol?.toLocaleString() || 0}
                                         </span>
                                         <span style={{ color: '#ff5252', textAlign: 'right' }}>
                                             <span style={{ fontSize: '9px', display: 'block', color: '#666' }}>매수잔량합</span>
-                                            {s.total_bid_v?.toLocaleString() || 0}
+                                            {s.total_bid_vol?.toLocaleString() || 0}
                                         </span>
                                     </div>
+                                        {s.hoka_ratio?.toLocaleString() || 0}
                                     <div style={{ width: '100%', height: '6px', backgroundColor: '#448aff', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
                                         <div style={{ 
                                             width: `${s.hoka_ratio}%`, 
@@ -159,6 +160,7 @@ const FastScalping = () => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '12px' }}>
                                     <span style={{ color: '#888' }}>강도: {s.strength}%</span>
                                     <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{s.speed} T/S</span>
+                                    <span style={{ color: '#888' }}> {s.total_ask_vol} { s.total_ask_vol +':'+ s.total_bid_vol} {s.hoka_ratio}%</span>
                                 </div>
                             </div>
                         );
