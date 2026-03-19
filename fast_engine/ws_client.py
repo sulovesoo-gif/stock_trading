@@ -39,7 +39,7 @@ class KISWebsocketClient:
         self.approval_key = kis.get_approval_key()
         print(f"🚀 실시간 연결 시작 (종목수: {len(interest_codes)}개)...")
         
-        async with websockets.connect(self.url, ping_interval=60) as websocket:
+        async with websockets.connect(self.url, ping_interval=None) as websocket:
             # print("✅ [WS] 서버 핸드쉐이크 완료. 1초 대기 후 구독 시작...")
             for code in interest_codes:
                 # 체결통합(H0UNASP0), 체결KRX(H0STCNT0) 및 호가통합(H0UNASP0),  호가KRX(H0STASP0) 구독
@@ -61,6 +61,12 @@ class KISWebsocketClient:
             while True:
                 try:
                     raw_data = await websocket.recv()
+
+                    # 3. PINGPONG 대응 (이게 없으면 장중에 잘 끊김)
+                    if "PINGPONG" in raw_data:
+                        await websocket.pong(raw_data) # 응답 전송
+                        continue
+                        
                     # 수신 확인을 위해 원본 데이터 바로 출력
                     # print(f"📥 RAW 수신: {raw_data}")
 

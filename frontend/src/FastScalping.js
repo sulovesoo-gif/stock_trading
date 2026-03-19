@@ -88,7 +88,7 @@ const FastScalping = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '20px' }}>
                 {/* 종목 카드 리스트 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-                    {Object.values(realtimeData).map(s => {
+                    {Object.values(realtimeData).sort((a, b) => a.idx - b.idx).map(s => {
                         // 1. 여기서 색상을 먼저 계산합니다.
                         const priceColor = s.rate > 0 ? '#928989' : s.rate < 0 ? '#448aff' : '#ffffff';
                         // 2. 이제 계산된 변수를 가지고 JSX를 반환합니다.

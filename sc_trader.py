@@ -15,7 +15,7 @@ async def get_initial_stock_data(stock_map):
     # KISApiHelper의 access_token 확인 및 발급
     token = kis.auth()
     
-    for code, name in stock_map.items():
+    for i, (code, name) in enumerate(stock_map.items()):
         url = f"{kis.base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
         params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}
         headers = {
@@ -39,6 +39,7 @@ async def get_initial_stock_data(stock_map):
             initial_stocks.append({
                 "code": code, 
                 "name": name, # api_helper.get_my_interests()에서 가져온 이름
+                "idx": i,
                 "price": int(out.get('stck_prpr', 0)),
                 "change": int(out.get('prdy_vrss', 0)),
                 "rate": float(out.get('prdy_ctrt', 0.0)),
