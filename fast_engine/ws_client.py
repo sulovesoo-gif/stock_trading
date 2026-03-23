@@ -140,7 +140,7 @@ class KISWebsocketClient:
                             else:
                                 rt_cd = jsonObject["body"]["rt_cd"]
                                 if rt_cd == '0':
-                                    print(f"✅ [구독성공] {tr_id} - {jsonObject["body"]["msg1"]}")
+                                    # print(f"✅ [구독성공] {tr_id} - {jsonObject["body"]["msg1"]}")
                                     if tr_id == "H0STCNI0" or tr_id == "H0STCNI9":
                                         self.aes_key = jsonObject["body"]["output"]["key"]
                                         self.aes_iv = jsonObject["body"]["output"]["iv"]
