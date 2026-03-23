@@ -103,13 +103,56 @@ const FastScalping = () => {
                                     <span>1호가 매도: {s.ask_vol?.toLocaleString()}</span>
                                     <span>1호가 매수: {s.bid_vol?.toLocaleString()}</span>
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
                                     <span style={{ color: '#ffffff', fontWeight: 'bold' }}>{s.name}({s.code})</span>
                                     <span style={{ fontSize: '10px', color: '#ff00ff' }}>VI까지 {s.vi_distance}%</span>
                                 </div>
+
+
+                                {/* [디자인 변경 - 이미지 가이드 적용] 금액 및 등락 라인 */}
+                                <div style={{ 
+                                    textAlign: 'right',
+                                    margin: '20px 0', 
+                                    fontFamily: "'Noto Sans KR', sans-serif"
+                                }}>
+                                    {/* 1. 대형 금액 표시 (32px, 파란색) */}
+                                    <div style={{ 
+                                        fontSize: '32px', 
+                                        fontWeight: '800', 
+                                        color: '#1E88E5',
+                                        letterSpacing: '-1px'
+                                    }}>
+                                        {s.price?.toLocaleString() || 0}
+                                    </div>
+                                    
+                                    {/* 2. 전일대비 라인 (12px, 중앙정렬) */}
+                                    <div style={{ 
+                                        fontSize: '12px', 
+                                        color: '#888', 
+                                        display: 'flex', 
+                                        justifyContent: 'right', 
+                                        gap: '4px',
+                                        marginTop: '-3px'
+                                    }}>
+                                        <span>전일대비</span>
+                                        <span style={{ 
+                                            color: '#1E88E5',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {s.rate > 0 ? '▲' : '▼'} {Math.abs(s.change)?.toLocaleString() || 0}
+                                        </span>
+                                        <span style={{ color: '#1E88E5' }}>|</span>
+                                        <span style={{ 
+                                            color: '#1E88E5',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {s.rate > 0 ? '+' : ''}{s.rate}%
+                                        </span>
+                                    </div>
+                                </div>
                                 
                                 {/* [수정] 위에서 정의한 priceColor 적용 및 화살표 추가 */}
-                                <div style={{ 
+                                {/* <div style={{ 
                                     fontSize: '26px', 
                                     fontWeight: 'bold', 
                                     textAlign: 'right', 
@@ -120,7 +163,7 @@ const FastScalping = () => {
                                         {s.rate > 0 ? '▲' : s.rate < 0 ? '▼' : ''}
                                     </span>
                                     {s.price?.toLocaleString()}
-                                </div>
+                                </div> */}
                                 
                                 {/* 이하 에너지 바 등 기존 로직 동일 */}
                                 {/* <div style={{ marginTop: '10px' }}>
@@ -145,7 +188,6 @@ const FastScalping = () => {
                                             {s.total_bid_vol?.toLocaleString() || 0}
                                         </span>
                                     </div>
-                                        {s.hoka_ratio?.toLocaleString() || 0}
                                     <div style={{ width: '100%', height: '6px', backgroundColor: '#448aff', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
                                         <div style={{ 
                                             width: `${s.hoka_ratio}%`, 
@@ -160,7 +202,7 @@ const FastScalping = () => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '12px' }}>
                                     <span style={{ color: '#888' }}>강도: {s.strength}%</span>
                                     <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{s.speed} T/S</span>
-                                    <span style={{ color: '#888' }}> {s.total_ask_vol} { s.total_ask_vol +':'+ s.total_bid_vol} {s.hoka_ratio}%</span>
+                                    {/* <span style={{ color: '#888' }}> { s.total_ask_vol +':'+ s.total_bid_vol} {s.hoka_ratio}%</span> */}
                                 </div>
                             </div>
                         );

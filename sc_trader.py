@@ -73,19 +73,25 @@ async def main():
         """웹소켓으로부터 수신된 raw 데이터를 가공하여 큐에 삽입"""
         # 체결 데이터 처리
         # print(f"DEBUG: on_tick_received 시작")
-        if data.get("type") == "TICK":
+        # if data.get("type") == "TICK":
+        if data.get('type') in ['TICK', 'HOKA']:
             summary = calc.update_tick(data)
+            # print(f"DEBUG: [{data.get('type')}] {summary}")
             if summary:
                 summary['name'] = stock_map.get(summary['code'], summary['code'])
-                summary['type'] = "TICK"
+                summary['type'] = data.get('type') #"TICK"
                 await queue.put(summary)
                 # 규칙 반영: 데이터 도달 확인용 필수 로그
-                # print(f"DEBUG: [TICK] {summary['name']} {summary['price']} ({summary['speed']} t/s)")
         
         # 호가 데이터 처리
-        elif data.get("type") == "HOKA":
-            data['name'] = stock_map.get(data['code'], data['code'])
-            await queue.put(data)
+        # elif data.get("type") == "HOKA":
+        #     summary = calc.update_tick(data)
+        #     if summary:
+        #         summary['name'] = stock_map.get(summary['code'], summary['code'])
+        #         summary['type'] = "HOKA"
+        #         await queue.put(summary)
+            # data['name'] = stock_map.get(data['code'], data['code'])
+            # await queue.put(data)
             # print(f"DEBUG: [HOKA] {data['name']} 수신") # 필요시 주석 해제
 
     async def sender():

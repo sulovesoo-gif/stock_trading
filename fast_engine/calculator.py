@@ -21,6 +21,7 @@ class FastScalpingCalculator:
                 'tick_speed': 0,
                 'vwap': 0.0,
                 'total_amt': 0,
+                'change' : 0.0,
                 'rate': 0.0, # <--- 1. 등락율 저장소 추가
                 'vi_up': 0,        # [수정] 초기값 설정
                 'vi_down': 0,      # [수정] 초기값 설정
@@ -29,9 +30,11 @@ class FastScalpingCalculator:
             }
 
         status = self.stock_status[code]
+        now = time.time()
         
         if data.get('type') == 'HOKA':
             # 호가 업데이트 로직 동일
+            # print(f"⚠️ update_tick hoka: {data}")
             status['hoka'] = {
                 'ask': data['ask'], 'bid': data['bid'],
                 'ask_vol': data['ask_vol'], 'bid_vol': data['bid_vol'],
@@ -41,8 +44,8 @@ class FastScalpingCalculator:
             status['curr_price'] = data['price']
             status['prev_strength'] = status['strength']
             status['strength'] = data.get('strength', status['strength'])
+            status['change'] = data.get('change', status['change']) # <--- 2. 체결 데이터에서 rate 추출
             status['rate'] = data.get('rate', status['rate']) # <--- 2. 체결 데이터에서 rate 추출
-            now = time.time()
             status['ticks'].append({'t': now, 'v': data['volume'], 'side': data['side']})
             # [교정] 기준가를 바탕으로 실제 VI 발동 가격 계산
             if data.get('vi_standard'):
@@ -51,45 +54,50 @@ class FastScalpingCalculator:
                 status['vi_down'] = int(base * 0.90) # 하방 10%
                 status['vi_standard'] = base
             
-        
-        # 4. 초당 체결 속도(Tick Speed) 계산
-        # 최근 5초 내에 발생한 틱의 개수를 계산하여 수급 폭발 확인
-        recent_ticks = [t for t in status['ticks'] if now - t['t'] < self.window_seconds]
-        status['tick_speed'] = len(recent_ticks) / self.window_seconds
+            # 4. 초당 체결 속도(Tick Speed) 계산
+            # 최근 5초 내에 발생한 틱의 개수를 계산하여 수급 폭발 확인
+            recent_ticks = [t for t in status['ticks'] if now - t['t'] < self.window_seconds]
+            status['tick_speed'] = len(recent_ticks) / self.window_seconds
 
-        # [추가] 급증 알림 플래그 (초당 5건 이상일 때)
-        status['is_speeding'] = status['tick_speed'] >= 5.0
+            # [추가] 급증 알림 플래그 (초당 5건 이상일 때)
+            status['is_speeding'] = status['tick_speed'] >= 5.0
 
-        # 5. 실시간 VWAP 근사치 계산 (단타 지지/저항선 활용)
-        # 당일 누적 거래량과 대금을 활용 (정확한 계산을 위해선 초기 누적치가 필요하나 실시간 증분으로 유지)
-        status['accum_vol'] += data['volume']
-        status['total_amt'] += (data['price'] * data['volume'])
-        if status['accum_vol'] > 0:
-            status['vwap'] = status['total_amt'] / status['accum_vol']
+            # 5. 실시간 VWAP 근사치 계산 (단타 지지/저항선 활용)
+            # 당일 누적 거래량과 대금을 활용 (정확한 계산을 위해선 초기 누적치가 필요하나 실시간 증분으로 유지)
+            status['accum_vol'] += data['volume']
+            status['total_amt'] += (data['price'] * data['volume'])
+            if status['accum_vol'] > 0:
+                status['vwap'] = status['total_amt'] / status['accum_vol']
 
         return self.get_summary(code)
 
     def get_summary(self, code):
+        # print(f"⚠️ get_summar: {code}")
         """프론트엔드로 보낼 핵심 요약 데이터 반환"""
         s = self.stock_status.get(code)
         if not s: return None
 
         # 호가 잔량 비율 계산 (이미지 인덱스 23번, 33번 기반 데이터 활용)
+        ask = 0
+        bid = 0
+        ask_vol = 0
+        bid_vol = 0
+        total_ask_vol = 0
+        total_bid_vol = 0
         hoka_ratio = 0
         if s.get('hoka'):
             try:
                 # parser_utils.py에서 넘어온 실시간 호가 잔량
-                # ask = int(s['hoka'].get('ask', 0))
-                # bid = int(s['hoka'].get('bid', 0))
-                # ask_vol = int(s['hoka'].get('ask_vol', 0))
-                # bid_vol = int(s['hoka'].get('bid_vol', 0))
+                ask = int(s['hoka'].get('ask', 0))
+                bid = int(s['hoka'].get('bid', 0))
+                ask_vol = int(s['hoka'].get('ask_vol', 0))
+                bid_vol = int(s['hoka'].get('bid_vol', 0))
                 total_ask_vol = int(s['hoka'].get('total_ask_vol', 0))
                 total_bid_vol = int(s['hoka'].get('total_bid_vol', 0))
-                print(f"hoka_ratio: {total_bid_vol} : {total_bid_vol} : {float(total_ask_vol + total_bid_vol)} 수신")
-
-                print(f"hoka_ratio: {round((float(total_bid_vol) / total_sum) * 100, 1)} 수신")
-                # if (ask_vol + bid_vol) > 0:
                 total_sum = float(total_ask_vol + total_bid_vol)
+                # print(f"hoka_ratio: {total_bid_vol} : {total_bid_vol} : {float(total_ask_vol + total_bid_vol)} 수신")
+                # print(f"hoka_ratio: {round((float(total_bid_vol) / total_sum) * 100, 1)} 수신")
+                # if (ask_vol + bid_vol) > 0:
                 if total_sum > 0:
                     # 매수잔량이 많을수록(비율이 높을수록) 하단 지지가 강bid_vol을 의미
                     hoka_ratio = round((float(total_bid_vol) / total_sum) * 100, 1)
@@ -106,12 +114,12 @@ class FastScalpingCalculator:
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
             "rate": s.get('rate', 0.0),
-            # "ask": s.get('ask', 0),
-            # "bid": s.get('bid', 0),
-            # "ask_vol": s.get('ask_vol', 0),
-            # "bid_vol": s.get('bid_vol', 0),
-            # "total_ask_vol": s.get('total_ask_vol', 0),
-            # "total_bid_vol": s.get('total_bid_vol', 0),
+            "ask": ask,
+            "bid": bid,
+            "ask_vol": ask_vol,
+            "bid_vol": bid_vol,
+            "total_ask_vol": total_ask_vol,
+            "total_bid_vol": total_bid_vol,
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),

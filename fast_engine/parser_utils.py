@@ -16,7 +16,9 @@ def parse_domestic_tick(raw_str):
             "vi_standard": int(fields[45]) if fields[45] else 0, # [추가] 정적VI발동기준가
             "market": "KR"
         }
-    except: return None
+    except Exception as e:
+        print(f"❌ 파싱 에러 ({fields[0] if 'fields' in locals() else 'unknown'}): {e}")
+        return None
 
 def parse_domestic_hoka(raw_str):
     """[국내주식] 실시간 호가 파싱 (H0UNASP0)"""
@@ -82,8 +84,8 @@ def parse_futures_tick(raw_str):
     except: return None
     
 def parse_data(message):
-    if 'H0STCNT0' in message or 'H0UNCNT0' in message: return parse_domestic_tick(message)
-    if 'H0UNASP0' in message: return parse_domestic_hoka(message)
+    if 'H0UNCNT0' in message or 'H0STCNT0' in message or 'H0NXCNT0' in message or 'H0STOUP0' in message: return parse_domestic_tick(message)
+    if 'H0UNASP0' in message or 'H0STASP0' in message or 'H0NXASP0' in message or 'H0STOAA0' in message: return parse_domestic_hoka(message)
     if 'HDFSCNT0' in message: return parse_overseas_tick(message)
     if 'HDFSASP0' in message: return parse_overseas_hoka(message)
     if "H0IFCNT0" in message: return parse_futures_tick(message)
