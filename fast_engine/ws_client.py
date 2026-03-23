@@ -31,7 +31,10 @@ class KISWebsocketClient:
 
     @staticmethod
     def get_year_code(year):
-        return chr(ord('A') + (year - 2020))
+        if year < 2036:
+            return str(year % 10)
+        else :
+            return chr(ord('A') + (year - 2036))
 
     @staticmethod
     def get_second_thursday(year, month):
@@ -60,7 +63,7 @@ class KISWebsocketClient:
                 target_month = quarter_months[idx + 1]
 
         year_code = self.get_year_code(year)
-        month_code = 'C' if target_month == 12 else str(target_month)
+        month_code = chr(ord('A') + (target_month - 10)) if target_month >= 10 else str(target_month)
         
         return f"101{year_code}{month_code}000"
 
