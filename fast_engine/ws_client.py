@@ -73,6 +73,11 @@ class KISWebsocketClient:
         # 새벽이나 밤에는 접속 시도 자체를 하지 않음
         return dt_time(8, 0) <= now <= dt_time(20, 0)
 
+    def is_regular_market(self):
+        now = datetime.now(KST).time()
+        # 새벽이나 밤에는 접속 시도 자체를 하지 않음
+        return dt_time(9, 0) <= now <= dt_time(15, 30)
+
     async def connect(self, callback):
         while True:
             # 1. 장 운영 시간이 아니면 접속 시도 자체를 하지 않음 (EOFError 방지)
@@ -88,10 +93,6 @@ class KISWebsocketClient:
                 # 선물 코드 동적 생성
                 future_code = self.get_kospi200_future_code()
                 print(f"🎯 산출된 선물 근월물 코드: {future_code}")
-                # 현재 시간 (KST 기준)
-                now = datetime.now(KST)
-                current_time = now.strftime("%H%M") # 예: "1345"
-                is_regular_market = "0900" <= current_time <= "1530"
                 
                 if not interest_codes:
                     print("⚠️ [WS] 구독할 종목 코드가 없습니다.")
@@ -110,7 +111,7 @@ class KISWebsocketClient:
                         ) as websocket:
                             # print("✅ [WS] 서버 핸드쉐이크 완료. 1초 대기 후 구독 시작...")
                             for code in interest_codes:
-                                if is_regular_market:
+                                if self.is_regular_market():
                                     await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
                                     await websocket.send(self._make_sub_msg(code, "H0STASP0"))
                                 else:
@@ -131,8 +132,13 @@ class KISWebsocketClient:
                             # await websocket.send(self._make_sub_msg("101S12", "H0IFCNT0"))
                             
                             # print(f"🚀 [WS] 선물 구독 완료: {"10100"}")
-
+                            # 1. 접속 시점의 모드를 저장 (ST인지 NX인지)
+                            is_reg_at_start = self.is_regular_market()
                             while True:
+                                if self.is_regular_market() != is_reg_at_start:
+                                    print(f"🔄 시장 상태 변경 감지 ({is_reg_at_start} -> {not is_reg_at_start}). 재접속합니다.")
+                                    break
+
                                 raw_data = await websocket.recv()
                                 # 수신 확인을 위해 원본 데이터 바로 출력
                                 # print(f"📥 RAW 수신: {raw_data}")
