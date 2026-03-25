@@ -63,9 +63,10 @@ class KISWebsocketClient:
                 target_month = quarter_months[idx + 1]
 
         year_code = self.get_year_code(year)
-        month_code = chr(ord('A') + (target_month - 10)) if target_month >= 10 else str(target_month)
+        month_code = f"{target_month:02d}"
+        # month_code = chr(ord('A') + (target_month - 10)) if target_month >= 10 else str(target_month)
         
-        return f"101{year_code}{month_code}000"
+        return f"101{year_code}{month_code}"
 
     def is_market_operating(self):
         """현재가 국내 주식/선물 장 운영 시간인지 확인 (08:00 ~ 16:00 권장)"""
@@ -126,8 +127,8 @@ class KISWebsocketClient:
 
                             # 2. 실시간 체결통보 구독 (장외 테스트용)
                             await websocket.send(self._make_sub_msg(kis.hts_id, "H0STCNI0"))
-                            # 3. 코스피200 선물(10100) 구독 전송
                             # print(f"🔔 실시간 체결통보 구독 요청 완료 (ID: {kis.hts_id})")
+                            # 3. 코스피200 선물(10100) 구독 전송
                             await websocket.send(self._make_sub_msg(future_code, "H0IFCNT0"))
                             # await websocket.send(self._make_sub_msg("101S12", "H0IFCNT0"))
                             
