@@ -10,7 +10,8 @@ def parse_domestic_tick(raw_str):
             "change": int(fields[4]),
             "rate": float(fields[5]),
             "volume": int(fields[12]),       # 실시간 체결량(CNTG_VOL)
-            "accum_volume": int(fields[13]), # 누적 거래량
+            "accum_vol": int(fields[13]),    # 누적 거래량
+            "accum_amt": int(fields[14]),    # 누적 거래 대금
             "strength": float(fields[18]),   # 체결강도
             "side": fields[21],              # 매도매수구분
             "vi_standard": int(fields[45]) if fields[45] else 0, # [추가] 정적VI발동기준가

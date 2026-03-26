@@ -28,6 +28,8 @@ class KISWebsocketClient:
         self.aes_iv = None
         # 가이드 반영: 원본 데이터 검증을 위한 로그 파일
         self.log_file = f"ws_raw_{datetime.now(KST).strftime('%Y%m%d')}.log"
+        self.log_file2 = f"ws_raw_H0IFCNT0_{datetime.now(KST).strftime('%Y%m%d')}.log"
+        
 
     @staticmethod
     def get_year_code(year):
@@ -112,16 +114,17 @@ class KISWebsocketClient:
                         ) as websocket:
                             # print("✅ [WS] 서버 핸드쉐이크 완료. 1초 대기 후 구독 시작...")
                             for code in interest_codes:
-                                if self.is_regular_market():
-                                    await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
-                                    await websocket.send(self._make_sub_msg(code, "H0STASP0"))
-                                else:
-                                    await websocket.send(self._make_sub_msg(code, "H0NXCNT0"))
-                                    await websocket.send(self._make_sub_msg(code, "H0NXASP0"))
-
-                                # await websocket.send(self._make_sub_msg(code, "H0UNCNT0"))
+                                # 통합 체결가
+                                await websocket.send(self._make_sub_msg(code, "H0UNCNT0"))
+                                # 통합 호가
+                                await websocket.send(self._make_sub_msg(code, "H0UNASP0"))
+                            #     if self.is_regular_market():
+                            #         await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
+                            #         await websocket.send(self._make_sub_msg(code, "H0STASP0"))
+                            #     else:
+                            #         await websocket.send(self._make_sub_msg(code, "H0NXCNT0"))
+                            #         await websocket.send(self._make_sub_msg(code, "H0NXASP0"))
                                 # await websocket.send(self._make_sub_msg(code, "H0STOUP0"))
-                                # await websocket.send(self._make_sub_msg(code, "H0UNASP0"))
                                 # await websocket.send(self._make_sub_msg(code, "H0STOAA0"))
                                 await asyncio.sleep(0.1)
 
@@ -129,8 +132,21 @@ class KISWebsocketClient:
                             await websocket.send(self._make_sub_msg(kis.hts_id, "H0STCNI0"))
                             # print(f"🔔 실시간 체결통보 구독 요청 완료 (ID: {kis.hts_id})")
                             # 3. 코스피200 선물(10100) 구독 전송
-                            await websocket.send(self._make_sub_msg(future_code, "H0IFCNT0"))
+                            # await websocket.send(self._make_sub_msg(future_code, "H0IFCNT0"))
                             # await websocket.send(self._make_sub_msg("101S12", "H0IFCNT0"))
+
+                            future_codes = [
+                                "KR410166000", #문서기준
+                                "KR4101660001", #문서기준
+                                "4101660001", #문서기준
+                                "101606",    # 현재 사용 중인 6자리
+                                "10160600",  # 8자리 확장형 (유력)
+                                "10160000",   # 지수 대표 코드형
+                                "10100"      # 지수선물 대표 코드 (문서상 혼용)
+                            ]
+                            for code2 in future_codes:
+                                print(f"📡 선물 구독 시도: {code2}")
+                                await websocket.send(self._make_sub_msg(code2, "H0IFCNT0"))
                             
                             # print(f"🚀 [WS] 선물 구독 완료: {"10100"}")
                             # 1. 접속 시점의 모드를 저장 (ST인지 NX인지)
@@ -143,11 +159,14 @@ class KISWebsocketClient:
                                 raw_data = await websocket.recv()
                                 # 수신 확인을 위해 원본 데이터 바로 출력
                                 # print(f"📥 RAW 수신: {raw_data}")
-
                                 # [추가] 원본 데이터 로그 기록 로직
-                                with open(self.log_file, "a", encoding="utf-8") as f:
-                                    f.write(f"[{datetime.now(KST)}] {raw_data}\n")
-                                
+                                if "H0IFCNT0" in raw_data:
+                                    with open(self.log_file2, "a", encoding="utf-8") as f:
+                                        f.write(f"[{datetime.now(KST)}] {raw_data}\n")
+                                else:
+                                    with open(self.log_file, "a", encoding="utf-8") as f:
+                                        f.write(f"[{datetime.now(KST)}] {raw_data}\n")
+
                                 # [추가] 파일이 어디에 써지고 있는지 딱 한 번만 출력 (확인용)
                                 # if not hasattr(self, '_path_printed'):
                                 #     print(f"📍 현재 로그 기록 중: {os.path.abspath(self.log_file)}")

@@ -16,11 +16,12 @@ class FastScalpingCalculator:
             self.stock_status[code] = {
                 'curr_price': 0,
                 'strength': 0.0,
+                'prev_strength': 0.0,
                 'accum_vol': 0,
+                'accum_amt': 0,
                 'ticks': deque(maxlen=200),
                 'tick_speed': 0,
                 'vwap': 0.0,
-                'total_amt': 0,
                 'change' : 0.0,
                 'rate': 0.0, # <--- 1. 등락율 저장소 추가
                 'vi_up': 0,        # [수정] 초기값 설정
@@ -31,6 +32,12 @@ class FastScalpingCalculator:
 
         status = self.stock_status[code]
         now = time.time()
+
+        # 1. 가속도: 현재 들어온 데이터와 직전 저장된 strength 비교
+        is_hot = (data['strength'] - status['strength']) >= 2.0
+        # 2. 대형체결: 5,000만원 기준 (기존 데이터 활용)
+        trade_amount = data['price'] * data['volume']
+        is_big_fish = trade_amount >= 50000000
         
         if data.get('type') == 'HOKA':
             # 호가 업데이트 로직 동일
@@ -63,11 +70,10 @@ class FastScalpingCalculator:
             status['is_speeding'] = status['tick_speed'] >= 5.0
 
             # 5. 실시간 VWAP 근사치 계산 (단타 지지/저항선 활용)
-            # 당일 누적 거래량과 대금을 활용 (정확한 계산을 위해선 초기 누적치가 필요하나 실시간 증분으로 유지)
-            status['accum_vol'] += data['volume']
-            status['total_amt'] += (data['price'] * data['volume'])
+            status['accum_vol'] = data['accum_vol']
+            status['accum_amt'] = data['accum_amt']
             if status['accum_vol'] > 0:
-                status['vwap'] = status['total_amt'] / status['accum_vol']
+                status['vwap'] = status['accum_amt'] / status['accum_vol']
 
         return self.get_summary(code)
 
@@ -85,6 +91,8 @@ class FastScalpingCalculator:
         total_ask_vol = 0
         total_bid_vol = 0
         hoka_ratio = 0
+        is_abnormal_hoka = False
+        is_fake_wall = False
         if s.get('hoka'):
             try:
                 # parser_utils.py에서 넘어온 실시간 호가 잔량
@@ -94,6 +102,20 @@ class FastScalpingCalculator:
                 bid_vol = int(s['hoka'].get('bid_vol', 0))
                 total_ask_vol = int(s['hoka'].get('total_ask_vol', 0))
                 total_bid_vol = int(s['hoka'].get('total_bid_vol', 0))
+                # 호가 이격도 불균형 (2.5배 법칙)
+                # 매도잔량이 매수잔량보다 2.5배 이상 많을 때 (상승 가능성 포착)
+                if total_bid_vol > 0 and (total_ask_vol / total_bid_vol) >= 2.5:
+                    is_abnormal_hoka = True
+
+                # 잔량 대비 체결 속도 미달 (허수벽 탐지)
+                # 특정 호가 잔량 / 최근 1분(여기선 window 기준) 평균 체결량 > 10
+                # 현재 tick_speed(초당 체결량)를 활용하여 계산
+                avg_volume_per_sec = s.get('tick_speed', 0)
+                if avg_volume_per_sec > 0:
+                    # 최우선 매도호가 잔량 기준 예시
+                    if (ask_vol / (avg_volume_per_sec * 60)) > 10:
+                        is_fake_wall = True
+
                 total_sum = float(total_ask_vol + total_bid_vol)
                 # print(f"hoka_ratio: {total_bid_vol} : {total_bid_vol} : {float(total_ask_vol + total_bid_vol)} 수신")
                 # print(f"hoka_ratio: {round((float(total_bid_vol) / total_sum) * 100, 1)} 수신")
@@ -111,6 +133,10 @@ class FastScalpingCalculator:
             "price": s.get('curr_price', 0),
             "strength": s.get('strength', 0.0),
             "prev_strength": s.get('prev_strength', 0.0),
+            "is_hot": is_hot,
+            "is_big_fish": is_big_fish,
+            "is_abnormal_hoka": is_abnormal_hoka,
+            "is_fake_wall": is_fake_wall,
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
             "rate": s.get('rate', 0.0),
@@ -120,6 +146,8 @@ class FastScalpingCalculator:
             "bid_vol": bid_vol,
             "total_ask_vol": total_ask_vol,
             "total_bid_vol": total_bid_vol,
+            "accum_vol": accum_vol, 
+            "accum_amt": accum_amt,
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),

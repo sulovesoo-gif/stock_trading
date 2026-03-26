@@ -17,7 +17,7 @@ async def get_initial_stock_data(stock_map):
     
     for i, (code, name) in enumerate(stock_map.items()):
         url = f"{kis.base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
-        params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}
+        params = {"FID_COND_MRKT_DIV_CODE": "UN", "FID_INPUT_ISCD": code}
         headers = {
             "content-type": "application/json; charset=utf-8",
             "authorization": f"Bearer {token}",

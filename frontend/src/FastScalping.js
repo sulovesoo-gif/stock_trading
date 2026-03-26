@@ -40,10 +40,22 @@ const FastScalping = () => {
 
                 // TICK일 때만 타임라인 업데이트
                 if (data.type === "TICK") {
-                    setTrades(prev => [{ 
-                        name: realtimeData[data.code]?.name || data.code, 
-                        ...data 
-                    }, ...prev].slice(0, 50));
+                    const { is_hot, is_big_fish, is_abnormal_hoka, is_fake_wall, code } = data;
+
+                    // [수정] 호가 불균형이나 허수벽이 발견된 경우도 타임라인에 포함
+                    if (is_big_fish || is_hot || is_abnormal_hoka || is_fake_wall) {
+                        let tags = [];
+                        if (is_hot) tags.push("🚀가속");
+                        if (is_big_fish) tags.push("🐋대형");
+                        if (is_abnormal_hoka) tags.push("⚖️불균형");
+                        if (is_fake_wall) tags.push("⚠️허수벽");
+
+                        setTrades(prev => [{ 
+                            name: realtimeData[data.code]?.name || data.code, 
+                            ...data,
+                            displayTag: tags.join(' ')
+                        }, ...prev].slice(0, 50));
+                    }
                 }
             }
         };
@@ -88,7 +100,19 @@ const FastScalping = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '20px' }}>
                 {/* 종목 카드 리스트 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-                    {Object.values(realtimeData).sort((a, b) => a.idx - b.idx).map(s => {
+                    {Object.values(realtimeData)
+                        .sort((a, b) => {
+                            // 1. 거래대금 계산 (누적거래량 * 현재가)
+                            const amtA = (a.accum_vol || 0) * (a.price || 0);
+                            const amtB = (b.accum_vol || 0) * (b.price || 0);
+                            
+                            // 2. 거래대금 기준 내림차순 정렬 (큰 돈이 위로)
+                            return amtB - amtA;
+
+                            // 만약 '체결 속도'순으로 바꾸고 싶다면 아래 주석을 해제하고 위 리턴을 주석처리하세요.
+                            // return (b.speed || 0) - (a.speed || 0); 
+                        })
+                        .map(s => {
                         // 1. 여기서 색상을 먼저 계산합니다.
                         const priceColor = s.rate > 0 ? '#928989' : s.rate < 0 ? '#448aff' : '#ffffff';
                         // 2. 이제 계산된 변수를 가지고 JSX를 반환합니다.
@@ -109,47 +133,57 @@ const FastScalping = () => {
                                 </div>
 
 
-                                {/* [디자인 변경 - 이미지 가이드 적용] 금액 및 등락 라인 */}
-                                <div style={{ 
-                                    textAlign: 'right',
-                                    margin: '20px 0', 
-                                    fontFamily: "'Noto Sans KR', sans-serif"
-                                }}>
-                                    {/* 1. 대형 금액 표시 (32px, 파란색) */}
-                                    <div style={{ 
-                                        fontSize: '32px', 
-                                        fontWeight: '800', 
-                                        color: '#1E88E5',
-                                        letterSpacing: '-1px'
-                                    }}>
-                                        {s.price?.toLocaleString() || 0}
-                                    </div>
+                                {/* [디자인 변경 - 등락에 따른 색상 동적 적용] */}
+                                {(() => {
+                                    // 1. 색상 및 부호 결정 로직
+                                    const isUp = s.rate > 0;
+                                    const isDown = s.rate < 0;
+                                    const color = isUp ? '#f44336' : (isDown ? '#1E88E5' : '#888');
+                                    const sign = isUp ? '▲' : (isDown ? '▼' : '');
                                     
-                                    {/* 2. 전일대비 라인 (12px, 중앙정렬) */}
-                                    <div style={{ 
-                                        fontSize: '12px', 
-                                        color: '#888', 
-                                        display: 'flex', 
-                                        justifyContent: 'right', 
-                                        gap: '4px',
-                                        marginTop: '-3px'
-                                    }}>
-                                        <span>전일대비</span>
-                                        <span style={{ 
-                                            color: '#1E88E5',
-                                            fontWeight: 'bold'
+                                    return (
+                                        <div style={{ 
+                                            textAlign: 'right',
+                                            margin: '20px 0', 
+                                            fontFamily: "'Noto Sans KR', sans-serif"
                                         }}>
-                                            {s.rate > 0 ? '▲' : '▼'} {Math.abs(s.change)?.toLocaleString() || 0}
-                                        </span>
-                                        <span style={{ color: '#1E88E5' }}>|</span>
-                                        <span style={{ 
-                                            color: '#1E88E5',
-                                            fontWeight: 'bold'
-                                        }}>
-                                            {s.rate > 0 ? '+' : ''}{s.rate}%
-                                        </span>
-                                    </div>
-                                </div>
+                                            {/* 1. 대형 금액 표시 (금액도 등락 색상에 맞춤) */}
+                                            <div style={{ 
+                                                fontSize: '32px', 
+                                                fontWeight: '800', 
+                                                color: color,  // 동적 색상 적용
+                                                letterSpacing: '-1px'
+                                            }}>
+                                                {s.price?.toLocaleString() || 0}
+                                            </div>
+                                            
+                                            {/* 2. 전일대비 라인 */}
+                                            <div style={{ 
+                                                fontSize: '12px', 
+                                                color: '#888', 
+                                                display: 'flex', 
+                                                justifyContent: 'right', 
+                                                gap: '4px',
+                                                marginTop: '-3px'
+                                            }}>
+                                                <span>전일대비</span>
+                                                <span style={{ 
+                                                    color: color, // 동적 색상 적용
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    {sign} {Math.abs(s.change)?.toLocaleString() || 0}
+                                                </span>
+                                                <span style={{ color: color }}>|</span>
+                                                <span style={{ 
+                                                    color: color, // 동적 색상 적용
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    {isUp ? '+' : ''}{s.rate}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                                 
                                 {/* [수정] 위에서 정의한 priceColor 적용 및 화살표 추가 */}
                                 {/* <div style={{ 
@@ -224,7 +258,22 @@ const FastScalping = () => {
                             <tbody>
                                 {trades.map((t, i) => (
                                     <tr key={i} style={{ borderBottom: '1px solid #222' }}>
-                                        <td style={{ padding: '8px 0', color: '#FFD700' }}>{t.name}</td>
+                                        <td style={{ padding: '8px 0', color: '#FFD700' }}>
+                                        {t.name} 
+                                        {/* 태그 출력: 배경색과 패딩을 주어 더 직관적으로 변경 */}
+                                        {t.displayTag && (
+                                            <span style={{ 
+                                                fontSize: '0.75em', 
+                                                marginLeft: '6px', 
+                                                padding: '2px 5px', 
+                                                backgroundColor: '#333', 
+                                                borderRadius: '3px',
+                                                color: '#FFF' 
+                                            }}>
+                                                {t.displayTag}
+                                            </span>
+                                        )}
+                                    </td>
                                         <td>{t.price?.toLocaleString()}</td>
                                         <td style={{ textAlign: 'right', color: t.rate > 0 ? '#FF5252' : '#448AFF' }}>
                                             {t.rate > 0 ? '▲' : '▼'}{Math.abs(t.rate)}%
