@@ -132,7 +132,9 @@ const FastScalping = () => {
                                     <span style={{ fontSize: '10px', color: '#ff00ff' }}>VI까지 {s.vi_distance}%</span>
                                 </div>
 
-
+                                <div style={{ fontSize: '0.8em', color: '#999', marginTop: '4px' }}>
+                                    거래 대금: {Math.floor((s.accum_amt || 0) / 100000000).toLocaleString()}억
+                                </div>
                                 {/* [디자인 변경 - 등락에 따른 색상 동적 적용] */}
                                 {(() => {
                                     // 1. 색상 및 부호 결정 로직

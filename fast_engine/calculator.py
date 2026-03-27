@@ -33,11 +33,6 @@ class FastScalpingCalculator:
         status = self.stock_status[code]
         now = time.time()
 
-        # 1. 가속도: 현재 들어온 데이터와 직전 저장된 strength 비교
-        is_hot = (data['strength'] - status['strength']) >= 2.0
-        # 2. 대형체결: 5,000만원 기준 (기존 데이터 활용)
-        trade_amount = data['price'] * data['volume']
-        is_big_fish = trade_amount >= 50000000
         
         if data.get('type') == 'HOKA':
             # 호가 업데이트 로직 동일
@@ -68,6 +63,12 @@ class FastScalpingCalculator:
 
             # [추가] 급증 알림 플래그 (초당 5건 이상일 때)
             status['is_speeding'] = status['tick_speed'] >= 5.0
+
+            # 1. 가속도: 현재 들어온 데이터와 직전 저장된 strength 비교
+            status['is_hot'] = (data['strength'] - status['strength']) >= 2.0
+            # 2. 대형체결: 5,000만원 기준 (기존 데이터 활용)
+            status['trade_amount'] = data['price'] * data['volume']
+            status['is_big_fish'] = status['trade_amount'] >= 50000000
 
             # 5. 실시간 VWAP 근사치 계산 (단타 지지/저항선 활용)
             status['accum_vol'] = data['accum_vol']
@@ -133,9 +134,9 @@ class FastScalpingCalculator:
             "price": s.get('curr_price', 0),
             "strength": s.get('strength', 0.0),
             "prev_strength": s.get('prev_strength', 0.0),
-            "is_hot": is_hot,
-            "is_big_fish": is_big_fish,
-            "is_abnormal_hoka": is_abnormal_hoka,
+            "is_hot": s.get('is_hot'),
+            "is_big_fish": s.get('is_big_fish'),
+            "is_abnormal_hoka": s.get('is_abnormal_hoka'),
             "is_fake_wall": is_fake_wall,
             "speed": round(s.get('tick_speed', 0), 2),
             "vwap": round(s.get('vwap', 0), 0),
@@ -146,8 +147,8 @@ class FastScalpingCalculator:
             "bid_vol": bid_vol,
             "total_ask_vol": total_ask_vol,
             "total_bid_vol": total_bid_vol,
-            "accum_vol": accum_vol, 
-            "accum_amt": accum_amt,
+            "accum_vol": s.get('accum_vol', 0), 
+            "accum_amt": s.get('accum_amt', 0),
             "signal": "HOT" if s.get('tick_speed', 0) > 5 else "NORMAL",
             "vi_up": s.get('vi_up', 0),
             "vi_down": s.get('vi_down', 0),
