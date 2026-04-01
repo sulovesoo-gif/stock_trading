@@ -26,9 +26,13 @@ class KISWebsocketClient:
         self.approval_key = None
         self.aes_key = None
         self.aes_iv = None
+
+        # log 폴더 생성
+        os.makedirs("log", exist_ok=True)
         # 가이드 반영: 원본 데이터 검증을 위한 로그 파일
-        self.log_file = f"ws_raw_{datetime.now(KST).strftime('%Y%m%d')}.log"
-        self.log_file2 = f"ws_raw_H0IFCNT0_{datetime.now(KST).strftime('%Y%m%d')}.log"
+        today = datetime.now(KST).strftime('%Y%m%d')
+        self.log_file = os.path.join("log", f"ws_raw_{today}.log")
+        self.log_file2 = os.path.join("log", f"ws_raw_H0IFCNT0_{today}.log")
         
 
     @staticmethod
@@ -94,8 +98,8 @@ class KISWebsocketClient:
                 stock_map = kis.get_my_interests()
                 interest_codes = list(stock_map.keys())
                 # 선물 코드 동적 생성
-                future_code = self.get_kospi200_future_code()
-                print(f"🎯 산출된 선물 근월물 코드: {future_code}")
+                # future_code = self.get_kospi200_future_code()
+                # print(f"🎯 산출된 선물 근월물 코드: {future_code}")
                 
                 if not interest_codes:
                     print("⚠️ [WS] 구독할 종목 코드가 없습니다.")
@@ -134,19 +138,21 @@ class KISWebsocketClient:
                             # 3. 코스피200 선물(10100) 구독 전송
                             # await websocket.send(self._make_sub_msg(future_code, "H0IFCNT0"))
                             # await websocket.send(self._make_sub_msg("101S12", "H0IFCNT0"))
+                            # await websocket.send(self._make_sub_msg("101606", "H0IFCNT0"))
 
-                            future_codes = [
-                                "KR410166000", #문서기준
-                                "KR4101660001", #문서기준
-                                "4101660001", #문서기준
-                                "101606",    # 현재 사용 중인 6자리
-                                "10160600",  # 8자리 확장형 (유력)
-                                "10160000",   # 지수 대표 코드형
-                                "10100"      # 지수선물 대표 코드 (문서상 혼용)
-                            ]
-                            for code2 in future_codes:
-                                print(f"📡 선물 구독 시도: {code2}")
-                                await websocket.send(self._make_sub_msg(code2, "H0IFCNT0"))
+                            # future_codes = [
+                            #     "KR410166000", #문서기준
+                            #     "KR4101660001", #문서기준
+                            #     "4101660001", #문서기준
+                            #     "101606",    # 현재 사용 중인 6자리
+                            #     "10166",    # 현재 사용 중인 6자리
+                            #     "10160600",  # 8자리 확장형 (유력)
+                            #     "10160000",   # 지수 대표 코드형
+                            #     "10100"      # 지수선물 대표 코드 (문서상 혼용)
+                            # ]
+                            # for code2 in future_codes:
+                            #     print(f"📡 선물 구독 시도: {code2}")
+                            #     await websocket.send(self._make_sub_msg(code2, "H0IFCNT0"))
                             
                             # print(f"🚀 [WS] 선물 구독 완료: {"10100"}")
                             # 1. 접속 시점의 모드를 저장 (ST인지 NX인지)
@@ -160,20 +166,26 @@ class KISWebsocketClient:
                                 # 수신 확인을 위해 원본 데이터 바로 출력
                                 # print(f"📥 RAW 수신: {raw_data}")
                                 # [추가] 원본 데이터 로그 기록 로직
-                                if "H0IFCNT0" in raw_data:
-                                    with open(self.log_file2, "a", encoding="utf-8") as f:
-                                        f.write(f"[{datetime.now(KST)}] {raw_data}\n")
-                                else:
-                                    with open(self.log_file, "a", encoding="utf-8") as f:
-                                        f.write(f"[{datetime.now(KST)}] {raw_data}\n")
+                                # if "H0IFCNT0" in raw_data:
+                                    # 1. 실시간 시세 데이터인 경우 (0 또는 1로 시작)
+                                    # if raw_data[0] in ['0', '1']:
+                                    #     with open(self.log_file2, "a", encoding="utf-8") as f:
+                                    #         f.write(f"🟢 [DATA] {datetime.now(KST)}: {raw_data}\n")
+                                    # 2. 구독 응답(JSON)인 경우
+                                    # else:
+                                    #     with open(self.log_file2, "a", encoding="utf-8") as f:
+                                    #         f.write(f"⚪ [INFO] {datetime.now(KST)}: {raw_data}\n")
+                                # else:
+                                #     with open(self.log_file, "a", encoding="utf-8") as f:
+                                #         f.write(f"[{datetime.now(KST)}] {raw_data}\n")
 
                                 # [추가] 파일이 어디에 써지고 있는지 딱 한 번만 출력 (확인용)
                                 # if not hasattr(self, '_path_printed'):
                                 #     print(f"📍 현재 로그 기록 중: {os.path.abspath(self.log_file)}")
                                 #     self._path_printed = True
                                 
-                                if "H0IFCNT0" in raw_data:
-                                    print(f"💓 {raw_data}")
+                                # if "H0IFCNT0" in raw_data:
+                                #     print(f"💓 {raw_data}")
 
                                 if raw_data[0] in ['0', '1']:
                                     # if "H0IFCNT0" in raw_data:
