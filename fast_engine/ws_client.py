@@ -119,15 +119,15 @@ class KISWebsocketClient:
                             # print("✅ [WS] 서버 핸드쉐이크 완료. 1초 대기 후 구독 시작...")
                             for code in interest_codes:
                                 # 통합 체결가
-                                await websocket.send(self._make_sub_msg(code, "H0UNCNT0"))
+                                # await websocket.send(self._make_sub_msg(code, "H0UNCNT0"))
                                 # 통합 호가
-                                await websocket.send(self._make_sub_msg(code, "H0UNASP0"))
-                            #     if self.is_regular_market():
-                            #         await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
-                            #         await websocket.send(self._make_sub_msg(code, "H0STASP0"))
-                            #     else:
-                            #         await websocket.send(self._make_sub_msg(code, "H0NXCNT0"))
-                            #         await websocket.send(self._make_sub_msg(code, "H0NXASP0"))
+                                # await websocket.send(self._make_sub_msg(code, "H0UNASP0"))
+                                if self.is_regular_market():
+                                    await websocket.send(self._make_sub_msg(code, "H0STCNT0"))
+                                    await websocket.send(self._make_sub_msg(code, "H0STASP0"))
+                                else:
+                                    await websocket.send(self._make_sub_msg(code, "H0NXCNT0"))
+                                    await websocket.send(self._make_sub_msg(code, "H0NXASP0"))
                                 # await websocket.send(self._make_sub_msg(code, "H0STOUP0"))
                                 # await websocket.send(self._make_sub_msg(code, "H0STOAA0"))
                                 await asyncio.sleep(0.1)
@@ -135,26 +135,7 @@ class KISWebsocketClient:
                             # 2. 실시간 체결통보 구독 (장외 테스트용)
                             await websocket.send(self._make_sub_msg(kis.hts_id, "H0STCNI0"))
                             # print(f"🔔 실시간 체결통보 구독 요청 완료 (ID: {kis.hts_id})")
-                            # 3. 코스피200 선물(10100) 구독 전송
-                            # await websocket.send(self._make_sub_msg(future_code, "H0IFCNT0"))
-                            # await websocket.send(self._make_sub_msg("101S12", "H0IFCNT0"))
-                            # await websocket.send(self._make_sub_msg("101606", "H0IFCNT0"))
-
-                            # future_codes = [
-                            #     "KR410166000", #문서기준
-                            #     "KR4101660001", #문서기준
-                            #     "4101660001", #문서기준
-                            #     "101606",    # 현재 사용 중인 6자리
-                            #     "10166",    # 현재 사용 중인 6자리
-                            #     "10160600",  # 8자리 확장형 (유력)
-                            #     "10160000",   # 지수 대표 코드형
-                            #     "10100"      # 지수선물 대표 코드 (문서상 혼용)
-                            # ]
-                            # for code2 in future_codes:
-                            #     print(f"📡 선물 구독 시도: {code2}")
-                            #     await websocket.send(self._make_sub_msg(code2, "H0IFCNT0"))
                             
-                            # print(f"🚀 [WS] 선물 구독 완료: {"10100"}")
                             # 1. 접속 시점의 모드를 저장 (ST인지 NX인지)
                             is_reg_at_start = self.is_regular_market()
                             while True:
@@ -184,12 +165,8 @@ class KISWebsocketClient:
                                 #     print(f"📍 현재 로그 기록 중: {os.path.abspath(self.log_file)}")
                                 #     self._path_printed = True
                                 
-                                # if "H0IFCNT0" in raw_data:
-                                #     print(f"💓 {raw_data}")
 
                                 if raw_data[0] in ['0', '1']:
-                                    # if "H0IFCNT0" in raw_data:
-                                    #     print(f"🔥 선물 실시간 데이터 수신: {raw_data[:50]}...") # 너무 길면 잘라서 출력
                                     asyncio.create_task(self.parse_and_relay(raw_data, callback))
                                 else:
                                     jsonObject = json.loads(raw_data)
@@ -197,11 +174,9 @@ class KISWebsocketClient:
                                     
                                     if tr_id == "PINGPONG":
                                         await websocket.pong(raw_data)
-                                        # print("💓 [PINGPONG] 응답 전송 완료")
                                     else:
                                         rt_cd = jsonObject["body"]["rt_cd"]
                                         if rt_cd == '0':
-                                            # print(f"✅ [구독성공] {tr_id} - {jsonObject["body"]["msg1"]}")
                                             if tr_id == "H0STCNI0" or tr_id == "H0STCNI9":
                                                 self.aes_key = jsonObject["body"]["output"]["key"]
                                                 self.aes_iv = jsonObject["body"]["output"]["iv"]
