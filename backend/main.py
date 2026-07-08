@@ -114,3 +114,58 @@ def get_all_signals():
     # 등락률 순 정렬하여 반환
     results.sort(key=lambda x: x.change_rate, reverse=True)
     return results
+
+@app.get("/api/program-history")
+def get_program_history():
+    # 1. 중복 제거 윈도우 함수 쿼리 정의
+    sql = """
+        SELECT * FROM (
+            SELECT collect_time
+                 , trade_time
+                 , stock_code
+                 , case when stock_code = '005930' then '삼성전자' else 'SK하이닉스' end as stock_name
+                 , stock_price
+                 , price_change
+                 , price_change_rate
+                 , accumulated_volume
+                 , sell_volume
+                 , buy_volume
+                 , net_buy_volume
+                 , sell_amount
+                 , buy_amount
+                 , net_buy_amount
+                 , net_buy_volume_change
+                 , net_buy_amount_change 
+                 , change_type
+                 , created_at
+                 , LAG(change_type, 1) OVER (PARTITION BY stock_code ORDER BY trade_time, collect_time) AS prev_change_type  
+              FROM stock_program_trade_history
+             WHERE DATE(collect_time) = CURDATE()
+          ) a
+         WHERE prev_change_type IS NULL
+            OR change_type != prev_change_type
+         ORDER BY collect_time DESC, stock_name
+    """
+    try:
+        rows = db.execute_query(sql)
+        
+        if isinstance(rows, pd.DataFrame):
+            if not rows.empty:
+                rows['collect_time'] = rows['collect_time'].astype(str)
+                rows['trade_time'] = rows['trade_time'].astype(str)
+                return rows.to_dict(orient='records')
+            return []
+            
+        elif isinstance(rows, list):
+            for row in rows:
+                if 'collect_time' in row:
+                    row['collect_time'] = str(row['collect_time'])
+                if 'trade_time' in row:
+                    row['trade_time'] = str(row['trade_time']) # DB에 저장된 "19:59:58" 그대로 사용
+            return rows
+            
+        return []
+        
+    except Exception as e:
+        print(f"❌ 프로그램 내역 API 에러: {e}")
+        return {"error": str(e)}

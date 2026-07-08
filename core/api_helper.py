@@ -330,4 +330,30 @@ class KISApiHelper:
             print(f"❌ 예외 발생: {e}")
             return {}
 
+    def fetch_program_trade(self, stock_code: str, market_div: str = "UN"):
+        """[국내주식] 종목별 프로그램매매추이(체결) 조회 API (TR: FHPPG04650101)"""
+        token = self.auth()
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/program-trade-by-stock"
+        
+        params = {
+            "FID_COND_MRKT_DIV_CODE": market_div,  # J(KRX), NX(NXT), UN(통합)
+            "FID_INPUT_ISCD": stock_code
+        }
+        
+        headers = {
+            "content-type": "application/json; charset=utf-8",
+            "authorization": f"Bearer {token}",
+            "appKey": self.app_key,
+            "appSecret": self.app_secret,
+            "tr_id": "FHPPG04650101",
+            "custtype": "P"
+        }
+        
+        try:
+            res = self.session.get(url, headers=headers, params=params)
+            return res.json()
+        except Exception as e:
+            print(f"❌ 프로그램매매 API 호출 에러 ({stock_code}): {e}")
+            return None
+            
 kis = KISApiHelper()
