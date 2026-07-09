@@ -60,4 +60,15 @@ class DBClient:
         finally:
             conn.close()
 
+    # 🚀 [트랙 3] 내부 로직용 단일건 조회: 결과가 있으면 첫 번째 dict 반환, 없으면 None 반환
+    def execute_select_one_query(self, sql, params=None):
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
+                conn.commit()
+                return cursor.fetchone()
+        finally:
+            conn.close()
+
 db = DBClient()

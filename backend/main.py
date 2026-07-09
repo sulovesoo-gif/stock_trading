@@ -117,53 +117,69 @@ def get_all_signals():
 
 @app.get("/api/program-history")
 def get_program_history():
-    # 1. 중복 제거 윈도우 함수 쿼리 정의
+    # 💡 대안 2의 추세 전환 연산 데이터가 들어간 모든 테이블 컬럼을 필터링 없이 통째로 조회합니다.
     sql = """
-        SELECT * FROM (
-            SELECT collect_time
-                 , trade_time
-                 , stock_code
-                 , case when stock_code = '005930' then '삼성전자' else 'SK하이닉스' end as stock_name
-                 , stock_price
-                 , price_change
-                 , price_change_rate
-                 , accumulated_volume
-                 , sell_volume
-                 , buy_volume
-                 , net_buy_volume
-                 , sell_amount
-                 , buy_amount
-                 , net_buy_amount
-                 , net_buy_volume_change
-                 , net_buy_amount_change 
-                 , change_type
-                 , created_at
-                 , LAG(change_type, 1) OVER (PARTITION BY stock_code ORDER BY trade_time, collect_time) AS prev_change_type  
-              FROM stock_program_trade_history
-             WHERE DATE(collect_time) = CURDATE()
-          ) a
-         WHERE prev_change_type IS NULL
-            OR change_type != prev_change_type
-         ORDER BY collect_time DESC, stock_name
+        SELECT collect_time
+             , trade_time
+             , stock_code
+             , CASE WHEN stock_code = '005930' THEN '삼성전자' ELSE 'SK하이닉스' END AS stock_name
+             , stock_price
+             , price_change
+             , price_change_rate
+             , accumulated_volume
+             , sell_volume
+             , buy_volume
+             , net_buy_volume
+             , sell_amount
+             , buy_amount
+             , net_buy_amount
+             , net_buy_volume_change
+             , net_buy_amount_change 
+             , change_type
+             , trend_group_no
+             , trend_status
+             , running_peak
+             , running_trough
+             , prev_confirmed_price
+             , created_at
+          FROM stock_program_trade_history
+         WHERE DATE(collect_time) = CURDATE()
+           AND (prev_confirmed_price IS NOT NULL OR trend_status = 'START')
+         ORDER BY collect_time DESC, trade_time DESC, stock_name
+         LIMIT 100
     """
     try:
         rows = db.execute_query(sql)
         
+        # 🔍 1. DB에서 원본으로 뽑아온 데이터의 타입과 개수 확인
+        print(f"📊 [DB 조회 결과] 타입: {type(rows)} | 데이터 개수: {len(rows) if rows is not None else 0}건")
+        print(f"🔍 [DB 원본 데이터 샘플]: {rows}")
+        
+        # 1. 데이터프레임 형태인 경우 처리
         if isinstance(rows, pd.DataFrame):
+            print("▶ Detected Type: Pandas DataFrame")
             if not rows.empty:
                 rows['collect_time'] = rows['collect_time'].astype(str)
                 rows['trade_time'] = rows['trade_time'].astype(str)
-                return rows.to_dict(orient='records')
+                result = rows.to_dict(orient='records')
+                print(f"🚀 [최종 반환 데이터 개수]: {len(result)}건")
+                return result
+            print("⚠️ DataFrame이 비어있습니다.")
             return []
             
-        elif isinstance(rows, list):
-            for row in rows:
-                if 'collect_time' in row:
-                    row['collect_time'] = str(row['collect_time'])
-                if 'trade_time' in row:
-                    row['trade_time'] = str(row['trade_time']) # DB에 저장된 "19:59:58" 그대로 사용
-            return rows
+        # 2. 리스트나 튜플 구조인 경우 처리
+        elif isinstance(rows, (list, tuple)):
+            print("▶ Detected Type: List or Tuple")
+            rows_list = list(rows)
+            for row in rows_list:
+                if isinstance(row, dict):
+                    if 'collect_time' in row: row['collect_time'] = str(row['collect_time'])
+                    if 'trade_time' in row: row['trade_time'] = str(row['trade_time'])
+            print(f"🚀 [최종 반환 데이터 개수]: {len(rows_list)}건")
+            return rows_list
             
+        # 💥 3. 만약 이도 저도 아닌 타입이라 걸러진 경우 로그 추적
+        print(f"❌ [타입 에러] 처리하지 못한 기이한 데이터 타입입니다: {type(rows)}")
         return []
         
     except Exception as e:

@@ -24,8 +24,9 @@ def is_market_open():
     # end_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
     start_time = now.replace(hour=8, minute=0, second=0, microsecond=0)
     end_time = now.replace(hour=20, minute=0, second=0, microsecond=0)
-    # return start_time <= now <= end_time
-    return True
+    
+    return start_time <= now <= end_time
+    # return True
 
 async def fetch_and_insert():
     now_str = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
@@ -89,22 +90,105 @@ async def fetch_and_insert():
             except:
                 ctrt = 0.0
 
+            # 1. 해당 종목의 당일 직전 상태값 딱 1건 조회
+            prev_sql = """
+                SELECT trend_group_no, trend_status, running_peak, running_trough, stock_price
+                FROM stock_program_trade_history
+                WHERE stock_code = %s AND DATE(collect_time) = CURDATE()
+                ORDER BY trade_time DESC, collect_time DESC 
+                LIMIT 1
+            """
+            # 현재 틱의 순매수 대금 (whol_smtn_ntby_tr_pbmn)
+            current_net_buy_amount = int(item['whol_smtn_ntby_tr_pbmn'])
+            THRESHOLD = 10000000000  # 100억 원 기준선
+            
+            # db 객체의 조회 메서드 구조에 맞게 연동 (fetchone 형태)
+            prev_row = db.execute_select_one_query(prev_sql, (code)) 
+
+            if not prev_row:
+                # 당일 첫 데이터 초기화
+                trend_group_no = 1
+                trend_status = 'START'
+                running_peak = current_net_buy_amount
+                running_trough = current_net_buy_amount
+                prev_confirmed_price = None
+            else:
+                # 💡 DictCursor 기반이므로 key로 데이터를 추출하며, int 형변환 및 None 방어 처리 추가
+                p_group = prev_row.get('trend_group_no')
+                p_status = prev_row.get('trend_status')
+                
+                # 가이드라인 금액들이 str이나 None으로 넘어올 경우를 대비해 int 변환
+                p_peak = int(prev_row.get('running_peak')) if prev_row.get('running_peak') is not None else current_net_buy_amount
+                p_trough = int(prev_row.get('running_trough')) if prev_row.get('running_trough') is not None else current_net_buy_amount
+                
+                # 주가는 float나 DECIMAL일 수 있으므로 int 처리
+                p_price = int(prev_row.get('stock_price')) if prev_row.get('stock_price') is not None else price
+                
+                # 기본값 유지 설정
+                trend_group_no = p_group
+                trend_status = p_status
+                prev_confirmed_price = None
+                
+                # 💥 [상승 중] 최고점 대비 100억 이상 하락 시 -> 하락 전환
+                if p_status == 'UP' and current_net_buy_amount <= p_peak - THRESHOLD:
+                    trend_group_no = p_group + 1
+                    trend_status = 'DOWN'
+                    # [중요] 새로운 하락 추세를 시작하므로, 현재 금액을 기준으로 최고/최저점 가이드라인을 리셋
+                    running_peak = current_net_buy_amount
+                    running_trough = current_net_buy_amount
+                    # 1그룹이 마무리되는 시점의 주가를 보관 (수익률 계산용)
+                    prev_confirmed_price = p_price
+                    
+                # 💥 [하락 중] 최저점 대비 100억 이상 상승 시 -> 상승 전환
+                elif p_status == 'DOWN' and current_net_buy_amount >= p_trough + THRESHOLD:
+                    trend_group_no = p_group + 1
+                    trend_status = 'UP'
+                    # [중요] 새로운 상승 추세를 시작하므로, 현재 금액을 기준으로 최고/최저점 가이드라인을 리셋
+                    running_peak = current_net_buy_amount
+                    running_trough = current_net_buy_amount
+                    # 직전 그룹이 마무리되는 시점의 주가를 보관
+                    prev_confirmed_price = p_price
+                    
+                # 💥 [START 상태] 최초 100억 기준 방향성 확정
+                elif p_status == 'START':
+                    running_peak = max(p_peak, current_net_buy_amount)
+                    running_trough = min(p_trough, current_net_buy_amount)
+                    if current_net_buy_amount >= p_peak + THRESHOLD:
+                        trend_status = 'UP'
+                        running_peak = current_net_buy_amount
+                        running_trough = current_net_buy_amount
+                    elif current_net_buy_amount <= p_trough - THRESHOLD:
+                        trend_status = 'DOWN'
+                        running_peak = current_net_buy_amount
+                        running_trough = current_net_buy_amount
+                
+                # 💥 [추세 유지] 가이드라인 갱신
+                else:
+                    running_peak = max(p_peak, current_net_buy_amount)
+                    running_trough = min(p_trough, current_net_buy_amount)
+            # --------------------------------------------------
+
+            # 기존 INSERT문에 새로 정의한 5개 컬럼 추가
             sql = """
                 INSERT INTO stock_program_trade_history 
                 (collect_time, trade_time, stock_code, stock_price, price_change, price_change_rate, 
                  accumulated_volume, sell_volume, buy_volume, net_buy_volume, 
-                 sell_amount, buy_amount, net_buy_amount, net_buy_volume_change, net_buy_amount_change, change_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 sell_amount, buy_amount, net_buy_amount, net_buy_volume_change, net_buy_amount_change, change_type,
+                 trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
+            # 기존 args 배열 뒤에 가공한 변수 5개 그대로 병합
             args = [
                 now_str, trade_time, code, price, change, ctrt,
                 int(item['acml_vol']), int(item['whol_smtn_seln_vol']), int(item['whol_smtn_shnu_vol']),
                 int(item['whol_smtn_ntby_qty']), int(item['whol_smtn_seln_tr_pbmn']), int(item['whol_smtn_shnu_tr_pbmn']),
-                int(item['whol_smtn_ntby_tr_pbmn']), vol_icdc, amt_icdc, change_type
+                current_net_buy_amount, vol_icdc, amt_icdc, change_type,
+                trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price
             ]
             
             db.execute_query(sql, args)
+
             if is_first_run:
                 initialized_stocks.add(code)
                 print(f"🚀 [{datetime.now(KST).strftime('%H:%M:%S')}] {code} 최초 기준 데이터 적재 완료 | {trade_time}")
@@ -118,6 +202,9 @@ async def fetch_and_insert():
         except Exception as e:
             print(f"❌ 파싱 및 개별 저장 에러 ({code}): {e}")
             continue
+
+
+
 
 async def main():
     print("⚡ 프로그램 매매 고속 수집기 가동 (대상: 삼성전자, SK하이닉스)")
