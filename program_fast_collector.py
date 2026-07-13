@@ -132,19 +132,20 @@ async def fetch_and_insert():
                 # 주가는 float나 DECIMAL일 수 있으므로 int 처리
                 p_price = int(prev_row.get('stock_price')) if prev_row.get('stock_price') is not None else price
 
-                # 💡 [START_THRESHOLD 제거 및 동적 체급 수정]
-                # START 상태일 때도 현재 틱 대금까지 후보군에 넣어 온전한 체급(THRESHOLD)을 도출합니다.
+                # 💡 [체급 계산 로직 수정] 
+                # START 상태일 때는 누적 금액 체급에 관계없이, 최초 방향성을 잡기 위해 기본 100억 허들을 적용합니다.
                 if p_status == 'START':
-                    check_amount = max(abs(p_peak), abs(p_trough), abs(current_net_buy_amount))
+                    THRESHOLD = 10000000000  # 기본 100억 고정 (또는 필요에 따라 조절)
                 else:
+                    # 이미 UP/DOWN 방향이 잡힌 후에는 고점/저점의 절대값 체급에 따라 동적으로 변동
                     check_amount = abs(p_peak) if p_status == 'UP' else abs(p_trough)
-                
-                if check_amount >= 100000000000:    # 고점/저점이 1000억 이상 빌드업된 경우
-                    THRESHOLD = 100000000000
-                elif check_amount >= 50000000000:   # 고점/저점이 500억 이상 빌드업된 경우
-                    THRESHOLD = 50000000000
-                else:                               # 기본 100억 기준선
-                    THRESHOLD = 10000000000
+                    
+                    if check_amount >= 100000000000:
+                        THRESHOLD = 100000000000
+                    elif check_amount >= 50000000000:
+                        THRESHOLD = 50000000000
+                    else:
+                        THRESHOLD = 10000000000
 
                 # 기본값 유지 설정
                 trend_group_no = p_group
