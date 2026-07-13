@@ -79,16 +79,9 @@ const ProgramHistory = () => {
                                 </tr>
                             ) : (
                                 programHistory.map((row, idx) => {
-                                    let stageChangeRate = "0.00%";
-                                    let stageChangeColor = "#111827";
-                                    if (row.prev_confirmed_price) {
-                                        const rate = ((row.stock_price - row.prev_confirmed_price) / row.prev_confirmed_price) * 100;
-                                        stageChangeRate = (rate > 0 ? '+' : '') + rate.toFixed(2) + "%";
-                                        stageChangeColor = rate > 0 ? '#EF4444' : rate < 0 ? '#3B82F6' : '#111827';
-                                    } else {
-                                        stageChangeRate = "-";
-                                        stageChangeColor = "#9CA3AF";
-                                    }
+                                    const returnRate = parseFloat(row.trend_return_rate) || 0;
+                                    const stageChangeRate = returnRate > 0 ? `+${returnRate.toFixed(2)}%` : returnRate < 0 ? `${returnRate.toFixed(2)}%` : "0.00%";
+                                    const stageChangeColor = returnRate > 0 ? '#EF4444' : returnRate < 0 ? '#3B82F6' : '#111827';
 
                                     return (
                                         <tr key={idx} style={{ borderBottom: '1px solid #E5E7EB', height: '38px', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F9FAFB' }}>
@@ -128,11 +121,12 @@ const ProgramHistory = () => {
                                                 <span style={getTrendStatusStyle(row.trend_status)}>{row.trend_status}</span>
                                             </td>
                                             
-                                            {/* 💡 새로 추가된 target_threshold 데이터 바인딩 (억 단위 변환) */}
+                                            {/* 💡 [수정] 돌파 시점 외에 NULL(공백) 구간은 빈칸'-'으로 처리하여 돌파 시점만 눈에 띄게 제어 */}
                                             <td style={{ padding: '10px', textAlign: 'center', fontWeight: '600', color: '#B45309', backgroundColor: '#FFFBEB' }}>
-                                                {row.target_threshold ? `${(row.target_threshold / 100000000).toLocaleString()}억` : '100억'}
+                                                {row.display_threshold ? `${(row.display_threshold / 100000000).toLocaleString()}억` : '-'}
                                             </td>
                                             
+                                            {/* 💡 [수정] 백엔드에서 완벽하게 계산된 전환기 대비 등락률 매핑 */}
                                             <td style={{ padding: '10px', fontWeight: 'bold', color: stageChangeColor, backgroundColor: '#FFFBEB' }}>
                                                 {stageChangeRate}
                                             </td>

@@ -119,33 +119,80 @@ def get_all_signals():
 def get_program_history():
     # 💡 대안 2의 추세 전환 연산 데이터가 들어간 모든 테이블 컬럼을 필터링 없이 통째로 조회합니다.
     sql = """
-        SELECT collect_time
-             , trade_time
-             , stock_code
-             , CASE WHEN stock_code = '005930' THEN '삼성전자' ELSE 'SK하이닉스' END AS stock_name
-             , stock_price
-             , price_change
-             , price_change_rate
-             , accumulated_volume
-             , sell_volume
-             , buy_volume
-             , net_buy_volume
-             , sell_amount
-             , buy_amount
-             , net_buy_amount
-             , net_buy_volume_change
-             , net_buy_amount_change 
-             , change_type
-             , trend_group_no
-             , trend_status
-             , target_threshold
-             , running_peak
-             , running_trough
-             , prev_confirmed_price
-             , created_at
-          FROM stock_program_trade_history
-         WHERE DATE(collect_time) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00'))
-           AND (prev_confirmed_price IS NOT NULL OR trend_status = 'START')
+        WITH ranked_history AS (
+            SELECT collect_time
+                 , trade_time
+                 , stock_code
+                 , CASE WHEN stock_code = '005930' THEN '삼성전자' ELSE 'SK하이닉스' END AS stock_name
+                 , stock_price
+                 , price_change
+                 , price_change_rate
+                 , accumulated_volume
+                 , sell_volume
+                 , buy_volume
+                 , net_buy_volume
+                 , sell_amount
+                 , buy_amount
+                 , net_buy_amount
+                 , net_buy_volume_change
+                 , net_buy_amount_change 
+                 , change_type
+                 , trend_group_no
+                 , trend_status
+                 , target_threshold
+                 , running_peak
+                 , running_trough
+                 , prev_confirmed_price
+                 -- 직전 행의 허들 및 그룹 번호 확인 (역추적용)
+                 , LEAD(target_threshold) OVER (PARTITION BY stock_code ORDER BY collect_time DESC, trade_time DESC) as prev_threshold
+                 , LEAD(trend_group_no) OVER (PARTITION BY stock_code ORDER BY collect_time DESC, trade_time DESC) as prev_group_no
+                 , created_at
+              FROM stock_program_trade_history
+             WHERE DATE(collect_time) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00'))
+        )
+        SELECT *
+             -- 💡 [허들 판정 변경] 
+             -- 1. 그룹이 새로 시작되는 최초 이벤트이거나
+             -- 2. 매수/매도 관계없이 허들 체급(절대값)이 이전보다 커지며 뚫고 나갈 때만 마킹 (나머지는 NULL)
+             , CASE 
+                    WHEN prev_group_no IS NULL OR trend_group_no != prev_group_no THEN target_threshold
+                    WHEN ABS(target_threshold) > ABS(prev_threshold) THEN target_threshold
+                    ELSE NULL 
+               END AS display_threshold
+             -- 💡 [핵심 지표] 전환기 확정 주가 대비 현재가의 등락률 (매수/매도 판단용)
+             , CASE 
+                    WHEN prev_confirmed_price IS NOT NULL AND prev_confirmed_price > 0 
+                    THEN ROUND(((stock_price - prev_confirmed_price) / prev_confirmed_price) * 100, 2)
+                    ELSE 0.00
+               END AS trend_return_rate
+          FROM ranked_history
+        # SELECT collect_time
+        #      , trade_time
+        #      , stock_code
+        #      , CASE WHEN stock_code = '005930' THEN '삼성전자' ELSE 'SK하이닉스' END AS stock_name
+        #      , stock_price
+        #      , price_change
+        #      , price_change_rate
+        #      , accumulated_volume
+        #      , sell_volume
+        #      , buy_volume
+        #      , net_buy_volume
+        #      , sell_amount
+        #      , buy_amount
+        #      , net_buy_amount
+        #      , net_buy_volume_change
+        #      , net_buy_amount_change 
+        #      , change_type
+        #      , trend_group_no
+        #      , trend_status
+        #      , target_threshold
+        #      , running_peak
+        #      , running_trough
+        #      , prev_confirmed_price
+        #      , created_at
+        #   FROM stock_program_trade_history
+        #  WHERE DATE(collect_time) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00'))
+        #    AND (prev_confirmed_price IS NOT NULL OR trend_status = 'START')
          ORDER BY collect_time DESC, trade_time DESC, stock_name
          LIMIT 100
     """
