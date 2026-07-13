@@ -92,20 +92,22 @@ async def fetch_and_insert():
 
             # 1. 해당 종목의 당일 직전 상태값 딱 1건 조회
             prev_sql = """
-                SELECT trend_group_no, trend_status, running_peak, running_trough, stock_price
+                SELECT trend_group_no, trend_status, running_peak, running_trough, stock_price, trade_time
                 FROM stock_program_trade_history
-                WHERE stock_code = %s AND DATE(collect_time) = CURDATE()
+                WHERE stock_code = %s AND DATE(collect_time) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00'))
                 ORDER BY trade_time DESC, collect_time DESC 
                 LIMIT 1
             """
             # 현재 틱의 순매수 대금 (whol_smtn_ntby_tr_pbmn)
             current_net_buy_amount = int(item['whol_smtn_ntby_tr_pbmn'])
-            THRESHOLD = 10000000000  # 100억 원 기준선
+            # THRESHOLD = 10000000000  # 100억 원 기준선
             
             # db 객체의 조회 메서드 구조에 맞게 연동 (fetchone 형태)
             prev_row = db.execute_select_one_query(prev_sql, (code)) 
 
             if not prev_row:
+                # 당일 첫 데이터 초기화 (최초 기준선은 100억)
+                THRESHOLD = 10000000000
                 # 당일 첫 데이터 초기화
                 trend_group_no = 1
                 trend_status = 'START'
@@ -113,6 +115,12 @@ async def fetch_and_insert():
                 running_trough = current_net_buy_amount
                 prev_confirmed_price = None
             else:
+                # 💡 [핵심 추가] 영업 시간이 직전 데이터와 동일하다면 중복 데이터이므로 스킵
+                p_trade_time = prev_row.get('trade_time')
+                if p_trade_time and str(p_trade_time) == trade_time:
+                    if not TEST_MODE:  # 테스트 모드가 아닐 때만 스킵
+                        continue
+
                 # 💡 DictCursor 기반이므로 key로 데이터를 추출하며, int 형변환 및 None 방어 처리 추가
                 p_group = prev_row.get('trend_group_no')
                 p_status = prev_row.get('trend_status')
@@ -123,7 +131,21 @@ async def fetch_and_insert():
                 
                 # 주가는 float나 DECIMAL일 수 있으므로 int 처리
                 p_price = int(prev_row.get('stock_price')) if prev_row.get('stock_price') is not None else price
+
+                # 💡 [START_THRESHOLD 제거 및 동적 체급 수정]
+                # START 상태일 때도 현재 틱 대금까지 후보군에 넣어 온전한 체급(THRESHOLD)을 도출합니다.
+                if p_status == 'START':
+                    check_amount = max(abs(p_peak), abs(p_trough), abs(current_net_buy_amount))
+                else:
+                    check_amount = abs(p_peak) if p_status == 'UP' else abs(p_trough)
                 
+                if check_amount >= 100000000000:    # 고점/저점이 1000억 이상 빌드업된 경우
+                    THRESHOLD = 100000000000
+                elif check_amount >= 50000000000:   # 고점/저점이 500억 이상 빌드업된 경우
+                    THRESHOLD = 50000000000
+                else:                               # 기본 100억 기준선
+                    THRESHOLD = 10000000000
+
                 # 기본값 유지 설정
                 trend_group_no = p_group
                 trend_status = p_status
@@ -174,8 +196,8 @@ async def fetch_and_insert():
                 (collect_time, trade_time, stock_code, stock_price, price_change, price_change_rate, 
                  accumulated_volume, sell_volume, buy_volume, net_buy_volume, 
                  sell_amount, buy_amount, net_buy_amount, net_buy_volume_change, net_buy_amount_change, change_type,
-                 trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price, target_threshold)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             # 기존 args 배열 뒤에 가공한 변수 5개 그대로 병합
@@ -184,7 +206,7 @@ async def fetch_and_insert():
                 int(item['acml_vol']), int(item['whol_smtn_seln_vol']), int(item['whol_smtn_shnu_vol']),
                 int(item['whol_smtn_ntby_qty']), int(item['whol_smtn_seln_tr_pbmn']), int(item['whol_smtn_shnu_tr_pbmn']),
                 current_net_buy_amount, vol_icdc, amt_icdc, change_type,
-                trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price
+                trend_group_no, trend_status, running_peak, running_trough, prev_confirmed_price, THRESHOLD
             ]
             
             db.execute_query(sql, args)

@@ -138,12 +138,13 @@ def get_program_history():
              , change_type
              , trend_group_no
              , trend_status
+             , target_threshold
              , running_peak
              , running_trough
              , prev_confirmed_price
              , created_at
           FROM stock_program_trade_history
-         WHERE DATE(collect_time) = CURDATE()
+         WHERE DATE(collect_time) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00'))
            AND (prev_confirmed_price IS NOT NULL OR trend_status = 'START')
          ORDER BY collect_time DESC, trade_time DESC, stock_name
          LIMIT 100

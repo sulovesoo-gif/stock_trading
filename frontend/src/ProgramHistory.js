@@ -50,7 +50,7 @@ const ProgramHistory = () => {
                 </h3>
                 
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '12px', minWidth: '1300px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '12px', minWidth: '1350px' }}>
                         <thead>
                             <tr style={{ borderBottom: '2px solid #E5E7EB', color: '#374151', height: '40px', backgroundColor: '#F3F4F6', fontWeight: '600' }}>
                                 <th style={{ padding: '10px', textAlign: 'left' }}>수집 일시</th>
@@ -66,14 +66,15 @@ const ProgramHistory = () => {
                                 <th style={{ padding: '10px', textAlign: 'center' }}>틱상태</th>
                                 <th style={{ padding: '10px', textAlign: 'center', backgroundColor: '#FEF3C7', color: '#92400E' }}>추세 그룹</th>
                                 <th style={{ padding: '10px', textAlign: 'center', backgroundColor: '#FEF3C7', color: '#92400E' }}>추세 방향</th>
+                                <th style={{ padding: '10px', textAlign: 'center', backgroundColor: '#FEF3C7', color: '#92400E' }}>판정 허들</th>
                                 <th style={{ padding: '10px', backgroundColor: '#FEF3C7', color: '#92400E', textAlign: 'right' }}>전환기 대비 등락</th>
                             </tr>
                         </thead>
                         <tbody>
                             {programHistory.length === 0 ? (
                                 <tr>
-                                    <td colSpan="14" style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', backgroundColor: '#FFFFFF' }}>
-                                        오늘 발생한 추세 전환(100억 임계치 돌파) 데이터가 없습니다.
+                                    <td colSpan="15" style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', backgroundColor: '#FFFFFF' }}>
+                                        오늘 발생한 추세 전환 데이터가 없습니다.
                                     </td>
                                 </tr>
                             ) : (
@@ -126,6 +127,12 @@ const ProgramHistory = () => {
                                             <td style={{ padding: '10px', textAlign: 'center', whiteSpace: 'nowrap', backgroundColor: '#FFFBEB' }}>
                                                 <span style={getTrendStatusStyle(row.trend_status)}>{row.trend_status}</span>
                                             </td>
+                                            
+                                            {/* 💡 새로 추가된 target_threshold 데이터 바인딩 (억 단위 변환) */}
+                                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: '600', color: '#B45309', backgroundColor: '#FFFBEB' }}>
+                                                {row.target_threshold ? `${(row.target_threshold / 100000000).toLocaleString()}억` : '100억'}
+                                            </td>
+                                            
                                             <td style={{ padding: '10px', fontWeight: 'bold', color: stageChangeColor, backgroundColor: '#FFFBEB' }}>
                                                 {stageChangeRate}
                                             </td>
